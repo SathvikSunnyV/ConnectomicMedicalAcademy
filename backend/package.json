@@ -4,6 +4,7 @@
   "description": "Connectomic Medical Academy \u2014 Anatomy / Physiology / Biochemistry / Neuroscience, MBBS-level + Reference tracks",
   "main": "server.js",
   "scripts": {
+    "prestart": "npm --prefix ../frontend install --no-audit --no-fund && npm --prefix ../frontend run build",
     "start": "node server.js"
   },
   "dependencies": {
