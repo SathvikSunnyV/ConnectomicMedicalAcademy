@@ -1,0 +1,70 @@
+import React, { useState } from 'react';
+import { Link } from 'react-router-dom';
+import HillVideoModal from '../components/HillVideoModal.jsx';
+import { IconAnatomy, IconPhysiology, IconBiochemistry, IconNeuroscience, IconArrowRight, IconPlay } from '../components/Icons.jsx';
+
+const CDN = 'https://pub-8521d28a1e0d44bb9c7da4e801284a66.r2.dev';
+const HILLS = [
+  { label: '1 · Known → Unknown', url: `${CDN}/The_First_Hill.mp4` },
+  { label: '2 · Central Point', url: `${CDN}/The_Second_Hill.mp4` },
+  { label: '3 · Let Student Discover', url: `${CDN}/The_Third_Hill__Discovery.mp4` },
+  { label: '4 · One Key, Many Doors', url: `${CDN}/One_Key,_Many_Doors.mp4` },
+  { label: '5 · Recognise Patterns', url: `${CDN}/The_Fifth_and_Sixth_Hills.mp4` },
+  { label: '6 · Build Connections', url: `${CDN}/The_Fifth_and_Sixth_Hills.mp4` },
+  { label: '7 · Real-World Wisdom', url: `${CDN}/The_Seventh_Hill.mp4` }
+];
+
+const SECTIONS = [
+  { Icon: IconAnatomy, name: 'Anatomy' },
+  { Icon: IconPhysiology, name: 'Physiology' },
+  { Icon: IconBiochemistry, name: 'Biochemistry' },
+  { Icon: IconNeuroscience, name: 'Neuroscience' }
+];
+
+export default function Welcome() {
+  const [activeVideo, setActiveVideo] = useState(null);
+
+  return (
+    <div className="page hero">
+      <div className="eyebrow">Connectomic Medical Academy</div>
+      <h1>Anatomy · Physiology · Biochemistry · Neuroscience</h1>
+      <p className="lead">
+        A connected, chapter-by-chapter path through pre-clinical MBBS subjects — built around
+        Prof. Konuri's Seven Hills of Knowledge. Each section pairs a core MBBS-level track with
+        a full reference library: reference book material, PPTs and videos.
+      </p>
+
+      <div className="ridge" aria-hidden="true">
+        <svg viewBox="0 0 920 190" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M0,190 L0,120 Q120,50 240,110 T460,90 T680,120 T920,80 L920,190 Z" fill="var(--hill-7)" />
+          <path d="M0,190 L0,150 Q160,90 320,140 T620,120 T920,140 L920,190 Z" fill="var(--hill-5)" />
+          <path d="M0,190 L0,165 Q200,120 400,160 T800,150 T920,165 L920,190 Z" fill="var(--hill-3)" />
+          <path d="M0,190 L0,178 Q260,150 460,178 T920,178 L920,190 Z" fill="var(--hill-2)" />
+        </svg>
+      </div>
+
+      <div className="grid-7 mt-1">
+        {HILLS.map((h, i) => (
+          <div key={i} className="badge badge-hill" onClick={() => setActiveVideo(h)}>
+            <span className="badge-hill-play"><IconPlay /></span>{h.label}
+          </div>
+        ))}
+      </div>
+
+      <Link to="/register" className="btn btn-primary mt-2">Start Your Journey <IconArrowRight /></Link>
+
+      <div className="eyebrow mt-2" style={{ marginTop: '2rem' }}>The Four Sections</div>
+      <div className="grid-4" style={{ textAlign: 'center', maxWidth: 1080, margin: '0.5rem auto 0' }}>
+        {SECTIONS.map(({ Icon, name }) => (
+          <div key={name} className="card section-icon-card">
+            <Icon className="section-icon" />
+            <h3>{name}</h3>
+            <p className="helper-text">MBBS Level + Reference, PPTs &amp; videos.</p>
+          </div>
+        ))}
+      </div>
+
+      <HillVideoModal video={activeVideo} onClose={() => setActiveVideo(null)} />
+    </div>
+  );
+}
