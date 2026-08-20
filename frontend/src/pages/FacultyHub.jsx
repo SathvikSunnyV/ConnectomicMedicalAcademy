@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { api } from '../api.js';
+import { api, apiUpload } from '../api.js';
 import { useToast } from '../context/ToastContext.jsx';
 import { IconGraduate, IconQuiz } from '../components/Icons.jsx';
 
@@ -17,13 +17,19 @@ export default function FacultyHub() {
   const [myMaterials, setMyMaterials] = useState([]);
   const [myLectures, setMyLectures] = useState([]);
 
-  useEffect(() => { api('/api/sections').then(setSections).catch(() => {}); loadMine(); }, []);
+  useEffect(() => { loadSections(); loadMine(); }, []);
 
   useEffect(() => {
     if (!sectionId) { setBooks([]); setChapters([]); return; }
+    loadBooksAndChapters();
+  }, [sectionId]);
+
+  function loadSections() { api('/api/sections').then(setSections).catch(() => {}); }
+  function loadBooksAndChapters() {
+    if (!sectionId) return;
     api(`/api/sections/${sectionId}/books`).then(setBooks).catch(() => {});
     api(`/api/sections/${sectionId}/chapters`).then(setChapters).catch(() => {});
-  }, [sectionId]);
+  }
 
   function loadMine() {
     api('/api/faculty/notes/mine').then(setMyNotes).catch(() => {});
@@ -70,6 +76,11 @@ export default function FacultyHub() {
             </div>
           </div>
 
+          <DropdownManager
+            sections={sections} sectionId={sectionId} books={books} chapters={chapters}
+            onSectionsChanged={loadSections} onBooksChaptersChanged={loadBooksAndChapters}
+          />
+
           <AddNoteForm bookId={bookId} chapterId={chapterId} onSaved={loadMine} />
           <AddMaterialForm bookId={bookId} chapterId={chapterId} onSaved={loadMine} />
           <AddLectureForm bookId={bookId} chapterId={chapterId} onSaved={loadMine} />
@@ -79,7 +90,7 @@ export default function FacultyHub() {
             onDelete={id => api(`/api/faculty/notes/${id}`, { method: 'DELETE' })}
           />
           <MyContentList title="Your materials" items={myMaterials} onChanged={loadMine}
-            renderMeta={m => `${m.section_name} · ${m.book_title}${m.chapter_name ? ' · ' + m.chapter_name : ' · whole book'} · ${m.material_type}`}
+            renderMeta={m => `${m.section_name} · ${m.book_title}${m.chapter_name ? ' · ' + m.chapter_name : ' · whole book'} · ${m.material_type} (${m.source_type === 'file' ? 'uploaded file' : 'link'})`}
             onDelete={id => api(`/api/faculty/materials/${id}`, { method: 'DELETE' })}
           />
           <MyContentList title="Your lecture videos" items={myLectures} onChanged={loadMine}
@@ -93,6 +104,120 @@ export default function FacultyHub() {
       {tab === 'tests' && <GrandTestsPanel />}
     </div>
   );
+
+  function DropdownManager({ sections, sectionId, books, chapters, onSectionsChanged, onBooksChaptersChanged }) {
+    const [newSectionName, setNewSectionName] = useState('');
+    const [newBookTitle, setNewBookTitle] = useState('');
+    const [newBookType, setNewBookType] = useState('mbbs');
+    const [newChapterName, setNewChapterName] = useState('');
+    const [busy, setBusy] = useState(false);
+
+    async function addSection(e) {
+      e.preventDefault();
+      if (!newSectionName.trim()) return;
+      setBusy(true);
+      try {
+        await api('/api/faculty/sections', { method: 'POST', body: JSON.stringify({ name: newSectionName }) });
+        showToast('Subject created.'); setNewSectionName(''); onSectionsChanged();
+      } catch (err) { showToast(err.message, 'error'); } finally { setBusy(false); }
+    }
+    async function deleteSection(id, name) {
+      if (!confirm(`Delete "${name}"? This removes every book, chapter, note, material, lecture and question under it.`)) return;
+      try { await api(`/api/faculty/sections/${id}`, { method: 'DELETE' }); showToast('Subject deleted.'); onSectionsChanged(); onBooksChaptersChanged(); }
+      catch (err) { showToast(err.message, 'error'); }
+    }
+
+    async function addBook(e) {
+      e.preventDefault();
+      if (!sectionId) { showToast('Pick a section above first.', 'error'); return; }
+      if (!newBookTitle.trim()) return;
+      setBusy(true);
+      try {
+        await api('/api/faculty/books', { method: 'POST', body: JSON.stringify({ sectionId, type: newBookType, title: newBookTitle }) });
+        showToast('Book created.'); setNewBookTitle(''); onBooksChaptersChanged();
+      } catch (err) { showToast(err.message, 'error'); } finally { setBusy(false); }
+    }
+    async function deleteBook(id, title) {
+      if (!confirm(`Delete "${title}"? This removes every note, material and lecture under it.`)) return;
+      try { await api(`/api/faculty/books/${id}`, { method: 'DELETE' }); showToast('Book deleted.'); onBooksChaptersChanged(); }
+      catch (err) { showToast(err.message, 'error'); }
+    }
+
+    async function addChapter(e) {
+      e.preventDefault();
+      if (!sectionId) { showToast('Pick a section above first.', 'error'); return; }
+      if (!newChapterName.trim()) return;
+      setBusy(true);
+      try {
+        await api('/api/faculty/chapters', { method: 'POST', body: JSON.stringify({ sectionId, name: newChapterName }) });
+        showToast('Chapter created.'); setNewChapterName(''); onBooksChaptersChanged();
+      } catch (err) { showToast(err.message, 'error'); } finally { setBusy(false); }
+    }
+    async function deleteChapter(id, name) {
+      if (!confirm(`Delete "${name}"? This removes every note, material, lecture and question tied to it.`)) return;
+      try { await api(`/api/faculty/chapters/${id}`, { method: 'DELETE' }); showToast('Chapter deleted.'); onBooksChaptersChanged(); }
+      catch (err) { showToast(err.message, 'error'); }
+    }
+
+    return (
+      <div className="card">
+        <h3>Manage subjects, books & chapters</h3>
+        <p className="helper-text">Full control over everything in the dropdowns above.</p>
+
+        <div className="grid-3 mt-1">
+          <div>
+            <h4>Subjects</h4>
+            <form onSubmit={addSection} className="flex-between" style={{ gap: '0.4rem' }}>
+              <input className="field" placeholder="New subject name" value={newSectionName} onChange={e => setNewSectionName(e.target.value)} />
+              <button className="btn btn-secondary btn-sm" disabled={busy}>Add</button>
+            </form>
+            {sections.map(s => (
+              <div key={s.id} className="chapter-row">
+                <span>{s.name}</span>
+                <button className="btn btn-danger btn-sm" onClick={() => deleteSection(s.id, s.name)}>Delete</button>
+              </div>
+            ))}
+          </div>
+
+          <div>
+            <h4>Books {sectionId ? '' : '(pick a subject)'}</h4>
+            {sectionId && (
+              <form onSubmit={addBook}>
+                <input className="field" placeholder="New book title" value={newBookTitle} onChange={e => setNewBookTitle(e.target.value)} />
+                <select className="mt-1" value={newBookType} onChange={e => setNewBookType(e.target.value)}>
+                  <option value="mbbs">MBBS Level</option>
+                  <option value="reference">Reference</option>
+                </select>
+                <button className="btn btn-secondary btn-sm mt-1" disabled={busy}>Add book</button>
+              </form>
+            )}
+            {books.map(b => (
+              <div key={b.id} className="chapter-row">
+                <span>{b.title} <span className="helper-text">({b.type})</span></span>
+                <button className="btn btn-danger btn-sm" onClick={() => deleteBook(b.id, b.title)}>Delete</button>
+              </div>
+            ))}
+          </div>
+
+          <div>
+            <h4>Chapters {sectionId ? '' : '(pick a subject)'}</h4>
+            {sectionId && (
+              <form onSubmit={addChapter} className="flex-between" style={{ gap: '0.4rem' }}>
+                <input className="field" placeholder="New chapter name" value={newChapterName} onChange={e => setNewChapterName(e.target.value)} />
+                <button className="btn btn-secondary btn-sm" disabled={busy}>Add</button>
+              </form>
+            )}
+            {chapters.map(c => (
+              <div key={c.id} className="chapter-row">
+                <span>{c.name}</span>
+                <button className="btn btn-danger btn-sm" onClick={() => deleteChapter(c.id, c.name)}>Delete</button>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   function AddNoteForm({ bookId, chapterId, onSaved }) {
     const [title, setTitle] = useState('');
@@ -135,18 +260,29 @@ export default function FacultyHub() {
   function AddMaterialForm({ bookId, chapterId, onSaved }) {
     const [title, setTitle] = useState('');
     const [type, setType] = useState('link');
+    const [source, setSource] = useState('link'); // 'link' | 'file'
     const [url, setUrl] = useState('');
+    const [file, setFile] = useState(null);
     const [busy, setBusy] = useState(false);
 
     async function handleSubmit(e) {
       e.preventDefault();
       if (!bookId) { showToast('Select a section and book above first.', 'error'); return; }
-      if (!title.trim() || !url.trim()) { showToast('Title and URL are required.', 'error'); return; }
+      if (!title.trim()) { showToast('Title is required.', 'error'); return; }
+      if (source === 'link' && !url.trim()) { showToast('Enter a link, or switch to file upload.', 'error'); return; }
+      if (source === 'file' && !file) { showToast('Choose a file to upload, or switch to link.', 'error'); return; }
       setBusy(true);
       try {
-        await api('/api/faculty/materials', { method: 'POST', body: JSON.stringify({ bookId, chapterId: chapterId || null, title, materialType: type, externalUrl: url }) });
+        if (source === 'file') {
+          const fd = new FormData();
+          fd.append('bookId', bookId); if (chapterId) fd.append('chapterId', chapterId);
+          fd.append('title', title); fd.append('materialType', type); fd.append('file', file);
+          await apiUpload('/api/faculty/materials', fd);
+        } else {
+          await api('/api/faculty/materials', { method: 'POST', body: JSON.stringify({ bookId, chapterId: chapterId || null, title, materialType: type, externalUrl: url }) });
+        }
         showToast('Material saved.');
-        setTitle(''); setUrl('');
+        setTitle(''); setUrl(''); setFile(null);
         onSaved();
       } catch (err) {
         showToast(err.message, 'error');
@@ -171,10 +307,24 @@ export default function FacultyHub() {
               </select>
             </div>
             <div className="field-group">
+              <label className="field-label">Source</label>
+              <select value={source} onChange={e => setSource(e.target.value)}>
+                <option value="link">Paste a link</option>
+                <option value="file">Upload a file</option>
+              </select>
+            </div>
+          </div>
+          {source === 'link' ? (
+            <div className="field-group">
               <label className="field-label">URL</label>
               <input className="field" value={url} onChange={e => setUrl(e.target.value)} />
             </div>
-          </div>
+          ) : (
+            <div className="field-group">
+              <label className="field-label">File (PDF / PPT / etc., up to 100MB)</label>
+              <input className="field" type="file" onChange={e => setFile(e.target.files?.[0] || null)} />
+            </div>
+          )}
           <p className="helper-text">Leave chapter as "whole book" above for a general resource, or pick a chapter for a chapter-specific one.</p>
           <button className="btn btn-primary" disabled={busy}>{busy ? 'Saving…' : 'Save material'}</button>
         </form>
@@ -184,18 +334,22 @@ export default function FacultyHub() {
 
   function AddLectureForm({ bookId, chapterId, onSaved }) {
     const [title, setTitle] = useState('');
-    const [url, setUrl] = useState('');
+    const [file, setFile] = useState(null);
     const [busy, setBusy] = useState(false);
 
     async function handleSubmit(e) {
       e.preventDefault();
       if (!bookId) { showToast('Select a section and book above first.', 'error'); return; }
-      if (!title.trim() || !url.trim()) { showToast('Title and URL are required.', 'error'); return; }
+      if (!title.trim()) { showToast('Title is required.', 'error'); return; }
+      if (!file) { showToast('Choose a video file to upload — lecture videos must be uploaded, links are not accepted.', 'error'); return; }
       setBusy(true);
       try {
-        await api('/api/faculty/lectures', { method: 'POST', body: JSON.stringify({ bookId, chapterId: chapterId || null, title, url }) });
-        showToast('Lecture saved.');
-        setTitle(''); setUrl('');
+        const fd = new FormData();
+        fd.append('bookId', bookId); if (chapterId) fd.append('chapterId', chapterId);
+        fd.append('title', title); fd.append('file', file);
+        await apiUpload('/api/faculty/lectures', fd);
+        showToast('Lecture uploaded.');
+        setTitle(''); setFile(null);
         onSaved();
       } catch (err) {
         showToast(err.message, 'error');
@@ -205,16 +359,17 @@ export default function FacultyHub() {
     return (
       <div className="card">
         <h3>Add a lecture video</h3>
+        <p className="helper-text">Lecture videos are always uploaded to the CDN — no external links here.</p>
         <form onSubmit={handleSubmit}>
           <div className="field-group">
             <label className="field-label">Title</label>
             <input className="field" value={title} onChange={e => setTitle(e.target.value)} />
           </div>
           <div className="field-group">
-            <label className="field-label">Video URL</label>
-            <input className="field" value={url} onChange={e => setUrl(e.target.value)} />
+            <label className="field-label">Video file (up to 1GB)</label>
+            <input className="field" type="file" accept="video/*" onChange={e => setFile(e.target.files?.[0] || null)} />
           </div>
-          <button className="btn btn-primary" disabled={busy}>{busy ? 'Saving…' : 'Save lecture'}</button>
+          <button className="btn btn-primary" disabled={busy}>{busy ? 'Uploading…' : 'Upload lecture'}</button>
         </form>
       </div>
     );
@@ -302,8 +457,38 @@ export default function FacultyHub() {
       catch (err) { showToast(err.message, 'error'); }
     }
 
+    const [bulkText, setBulkText] = useState('');
+    const [bulkBusy, setBulkBusy] = useState(false);
+
+    async function handleBulkImport(e) {
+      e.preventDefault();
+      let parsed;
+      try { parsed = JSON.parse(bulkText); } catch { showToast('Not valid JSON — paste an array of question objects.', 'error'); return; }
+      if (!Array.isArray(parsed) || parsed.length === 0) { showToast('Paste a JSON array of questions.', 'error'); return; }
+      setBulkBusy(true);
+      try {
+        const result = await api('/api/qbank/questions/bulk', { method: 'POST', body: JSON.stringify({ questions: parsed }) });
+        showToast(`Imported ${result.inserted} question(s)${result.errors.length ? `, ${result.errors.length} error(s) — check console` : ''} — pending admin approval.`);
+        if (result.errors.length) console.warn('Bulk import errors:', result.errors);
+        setBulkText('');
+        loadMine();
+      } catch (err) { showToast(err.message, 'error'); } finally { setBulkBusy(false); }
+    }
+
     return (
       <>
+        <div className="card mt-1">
+          <h3>Bulk import (JSON, by chapter name)</h3>
+          <p className="helper-text">Paste an array of questions keyed by chapterName — no need to look up IDs. Each item needs chapterName, questionText, optionA-D and correctAnswer (A-D); topic, explanation, difficulty and estimatedTime (seconds) are optional. These go to the approval queue like any other faculty submission.</p>
+          <form onSubmit={handleBulkImport}>
+            <div className="field-group">
+              <textarea rows={8} value={bulkText} onChange={e => setBulkText(e.target.value)}
+                placeholder={'[{"chapterName":"Laws of Motion","topic":"Second law of motion","questionText":"A body of mass 2 kg accelerates at 5 m/s^2. What is the net force acting on it?","optionA":"5 N","optionB":"10 N","optionC":"15 N","optionD":"20 N","correctAnswer":"B","explanation":"F = ma = 2 x 5 = 10 N","difficulty":"Moderate","estimatedTime":60}]'} />
+            </div>
+            <button className="btn btn-primary" disabled={bulkBusy}>{bulkBusy ? 'Importing…' : 'Import'}</button>
+          </form>
+        </div>
+
         <div className="card mt-1">
           <h3>Submit a question</h3>
           <p className="helper-text">New questions go to the admin approval queue before they appear in tests.</p>
@@ -458,8 +643,18 @@ export default function FacultyHub() {
     const { showToast } = useToast();
     const [data, setData] = useState(null);
     const [busy, setBusy] = useState(false);
+    const [sections, setSections] = useState([]);
+    const [chapterSectionId, setChapterSectionId] = useState('');
+    const [chapters, setChapters] = useState([]);
+    const [chapterId, setChapterId] = useState('');
+    const [chapterCount, setChapterCount] = useState('');
 
-    useEffect(() => { load(); }, [testId]);
+    useEffect(() => { load(); api('/api/sections').then(setSections).catch(() => {}); }, [testId]);
+    useEffect(() => {
+      if (!chapterSectionId) { setChapters([]); return; }
+      api(`/api/sections/${chapterSectionId}/chapters`).then(setChapters).catch(() => {});
+    }, [chapterSectionId]);
+
     function load() { api(`/api/faculty/tests/${testId}/questions`).then(setData).catch(() => {}); }
 
     async function addQuestion(qId) {
@@ -469,6 +664,17 @@ export default function FacultyHub() {
     async function removeQuestion(qId) {
       try { await api(`/api/faculty/tests/${testId}/questions/${qId}`, { method: 'DELETE' }); load(); }
       catch (err) { showToast(err.message, 'error'); }
+    }
+    async function addChapter(e) {
+      e.preventDefault();
+      if (!chapterId) { showToast('Pick a chapter first.', 'error'); return; }
+      try {
+        const result = await api(`/api/faculty/tests/${testId}/chapters`, {
+          method: 'POST', body: JSON.stringify({ chapterId, questionCount: chapterCount ? parseInt(chapterCount, 10) : undefined })
+        });
+        showToast(`Added ${result.added} question(s) from that chapter.`);
+        setChapterCount(''); load();
+      } catch (err) { showToast(err.message, 'error'); }
     }
     async function publish() {
       setBusy(true);
@@ -487,6 +693,26 @@ export default function FacultyHub() {
           <h3>Editing: {data.test.title}</h3>
           <button className="btn btn-primary" disabled={busy || data.included.length === 0} onClick={publish}>Publish</button>
         </div>
+
+        <div className="card mt-1">
+          <h4>Add a whole chapter</h4>
+          <p className="helper-text">Pick a chapter — leave "questions" blank to add every approved question in it, or set a number to pick that many at random.</p>
+          <form onSubmit={addChapter} className="grid-3">
+            <select value={chapterSectionId} onChange={e => { setChapterSectionId(e.target.value); setChapterId(''); }}>
+              <option value="">— Subject —</option>
+              {sections.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+            </select>
+            <select value={chapterId} onChange={e => setChapterId(e.target.value)} disabled={!chapterSectionId}>
+              <option value="">— Chapter —</option>
+              {chapters.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+            <div className="flex-between" style={{ gap: '0.4rem' }}>
+              <input className="field" type="number" min={1} placeholder="Questions (optional)" value={chapterCount} onChange={e => setChapterCount(e.target.value)} />
+              <button className="btn btn-secondary btn-sm">Add</button>
+            </div>
+          </form>
+        </div>
+
         <div className="grid-2 mt-1">
           <div>
             <h4>In this test ({data.included.length})</h4>

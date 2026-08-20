@@ -3,6 +3,61 @@ import { Link } from 'react-router-dom';
 import { api } from '../api.js';
 import { IconChart } from '../components/Icons.jsx';
 
+function SubjectBarChart({ bySection }) {
+  const width = 600, height = 220, padding = 36;
+  const barGap = 24;
+  const barWidth = (width - padding * 2 - barGap * (bySection.length - 1)) / bySection.length;
+  const scaleY = v => height - padding - (v / 100) * (height - padding * 2);
+
+  return (
+    <svg viewBox={`0 0 ${width} ${height}`} style={{ width: '100%', height: 'auto' }}>
+      {[0, 25, 50, 75, 100].map(v => (
+        <g key={v}>
+          <line x1={padding} x2={width - padding} y1={scaleY(v)} y2={scaleY(v)} stroke="var(--border)" strokeWidth="1" />
+          <text x={padding - 8} y={scaleY(v) + 4} fontSize="10" textAnchor="end" fill="var(--ink-soft)">{v}%</text>
+        </g>
+      ))}
+      {bySection.map((s, i) => {
+        const x = padding + i * (barWidth + barGap);
+        const y = scaleY(s.avg_pct);
+        const barHeight = height - padding - y;
+        return (
+          <g key={s.section_name}>
+            <rect x={x} y={y} width={barWidth} height={barHeight} rx="6" fill="var(--accent)" />
+            <text x={x + barWidth / 2} y={y - 6} fontSize="11" textAnchor="middle" fill="var(--ink)" fontWeight="600">{s.avg_pct}%</text>
+            <text x={x + barWidth / 2} y={height - padding + 16} fontSize="10" textAnchor="middle" fill="var(--ink-soft)">{s.section_name}</text>
+          </g>
+        );
+      })}
+    </svg>
+  );
+}
+
+function ScoreTrendChart({ recentScores }) {
+  const points = [...recentScores].reverse(); // oldest -> newest, left to right
+  const width = 600, height = 200, padding = 36;
+  const scaleX = i => padding + (points.length === 1 ? 0 : (i / (points.length - 1)) * (width - padding * 2));
+  const scaleY = v => height - padding - (v / 100) * (height - padding * 2);
+  const path = points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${scaleX(i)} ${scaleY(p.pct)}`).join(' ');
+
+  return (
+    <svg viewBox={`0 0 ${width} ${height}`} style={{ width: '100%', height: 'auto' }}>
+      {[0, 25, 50, 75, 100].map(v => (
+        <g key={v}>
+          <line x1={padding} x2={width - padding} y1={scaleY(v)} y2={scaleY(v)} stroke="var(--border)" strokeWidth="1" />
+          <text x={padding - 8} y={scaleY(v) + 4} fontSize="10" textAnchor="end" fill="var(--ink-soft)">{v}%</text>
+        </g>
+      ))}
+      <path d={path} fill="none" stroke="var(--accent-deep)" strokeWidth="2.5" />
+      {points.map((p, i) => (
+        <circle key={i} cx={scaleX(i)} cy={scaleY(p.pct)} r="4" fill="var(--accent-deep)">
+          <title>{p.title}: {p.pct}%</title>
+        </circle>
+      ))}
+    </svg>
+  );
+}
+
 export default function Progress() {
   const [data, setData] = useState(null);
 
@@ -29,14 +84,14 @@ export default function Progress() {
       {bySection.length > 0 && (
         <div className="card mt-1">
           <h3>By subject</h3>
-          {bySection.map(s => (
-            <div key={s.section_name} className="mt-1">
-              <div className="flex-between"><span>{s.section_name}</span><span className="helper-text">{s.avg_pct}% · {s.tests_taken} tests</span></div>
-              <div style={{ height: 8, borderRadius: 999, background: 'var(--border)', overflow: 'hidden' }}>
-                <div style={{ height: '100%', width: `${s.avg_pct}%`, background: 'linear-gradient(135deg, var(--accent), var(--accent-deep))' }} />
-              </div>
-            </div>
-          ))}
+          <SubjectBarChart bySection={bySection} />
+        </div>
+      )}
+
+      {recentScores.length > 1 && (
+        <div className="card mt-1">
+          <h3>Score trend</h3>
+          <ScoreTrendChart recentScores={recentScores} />
         </div>
       )}
 

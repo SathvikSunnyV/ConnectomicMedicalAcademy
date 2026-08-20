@@ -13,3 +13,20 @@ export async function api(path, opts = {}, tokenOverride) {
   }
   return data;
 }
+
+// For multipart/form-data uploads (material files, lecture videos). Pass a
+// FormData instance -- deliberately no Content-Type header here, so the
+// browser sets the multipart boundary itself.
+export async function apiUpload(path, formData, method = 'POST') {
+  const token = localStorage.getItem('cma_token');
+  const headers = {};
+  if (token) headers.Authorization = `Bearer ${token}`;
+  const res = await fetch(`${API_BASE}${path}`, { method, headers, body: formData });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const err = new Error(data.error || 'Something went wrong.');
+    err.data = data;
+    throw err;
+  }
+  return data;
+}
