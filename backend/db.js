@@ -148,7 +148,8 @@ async function initSchema() {
         CREATE TABLE IF NOT EXISTS sections (
             id          SERIAL PRIMARY KEY,
             name        TEXT UNIQUE NOT NULL,
-            position    INTEGER NOT NULL DEFAULT 0
+            position    INTEGER NOT NULL DEFAULT 0,
+            created_by  INTEGER REFERENCES users(id) ON DELETE SET NULL
         );
 
         CREATE TABLE IF NOT EXISTS books (
@@ -158,7 +159,7 @@ async function initSchema() {
             title         TEXT NOT NULL,
             description   TEXT,
             position      INTEGER NOT NULL DEFAULT 0,
-            UNIQUE(section_id, type)
+            created_by    INTEGER REFERENCES users(id) ON DELETE SET NULL
         );
 
         CREATE TABLE IF NOT EXISTS chapters (
@@ -166,6 +167,7 @@ async function initSchema() {
             section_id    INTEGER NOT NULL REFERENCES sections(id) ON DELETE CASCADE,
             name          TEXT NOT NULL,
             position      INTEGER NOT NULL DEFAULT 0,
+            created_by    INTEGER REFERENCES users(id) ON DELETE SET NULL,
             UNIQUE(section_id, name)
         );
 
@@ -277,10 +279,36 @@ async function initSchema() {
         );
     `);
 
+    await migrateContentSchema();
     await seedSections();
     await seedAdmin();
     await seedQuestionBank();
     console.log('✅  Connectomic Medical Academy schema ready');
+}
+
+// Additive, non-destructive migration for existing installs: new columns
+// on tables that already exist from before this change, plus relaxing the
+// old one-book-per-type-per-section constraint now that faculty can create
+// their own books. Safe to run every startup -- every statement is
+// idempotent (IF NOT EXISTS / IF EXISTS) and none of them drop data.
+async function migrateContentSchema() {
+    await pool.query(`
+        ALTER TABLE question_bank ADD COLUMN IF NOT EXISTS topic TEXT;
+        ALTER TABLE question_bank ADD COLUMN IF NOT EXISTS estimated_time_sec INTEGER DEFAULT 60;
+
+        ALTER TABLE materials ADD COLUMN IF NOT EXISTS source_type TEXT NOT NULL DEFAULT 'link' CHECK (source_type IN ('link','file'));
+        ALTER TABLE materials ADD COLUMN IF NOT EXISTS storage_key TEXT;
+        ALTER TABLE materials ADD COLUMN IF NOT EXISTS file_size_bytes BIGINT;
+
+        ALTER TABLE lectures ADD COLUMN IF NOT EXISTS storage_key TEXT;
+        ALTER TABLE lectures ADD COLUMN IF NOT EXISTS file_size_bytes BIGINT;
+
+        ALTER TABLE books ADD COLUMN IF NOT EXISTS created_by INTEGER REFERENCES users(id) ON DELETE SET NULL;
+        ALTER TABLE books DROP CONSTRAINT IF EXISTS books_section_id_type_key;
+
+        ALTER TABLE sections ADD COLUMN IF NOT EXISTS created_by INTEGER REFERENCES users(id) ON DELETE SET NULL;
+        ALTER TABLE chapters ADD COLUMN IF NOT EXISTS created_by INTEGER REFERENCES users(id) ON DELETE SET NULL;
+    `);
 }
 
 // ---------------------------------------------------------------------------
@@ -305,14 +333,26 @@ async function seedSections() {
         );
         const sectionId = section.id;
 
-        await pool.query(
-            `INSERT INTO books (section_id, type, title, description, position)
-             VALUES
-                ($1, 'mbbs', 'MBBS Level', 'Core chapter-wise ${name} teaching content for MBBS curriculum.', 0),
-                ($1, 'reference', 'Reference & Resources', 'Reference book material, PPTs and videos for ${name}.', 1)
-             ON CONFLICT (section_id, type) DO UPDATE SET description = EXCLUDED.description`,
-            [sectionId]
-        );
+        // Seed the two starter books only if this section has none of that
+        // type yet -- check-then-insert instead of ON CONFLICT, since the
+        // UNIQUE(section_id, type) constraint was intentionally relaxed so
+        // faculty can add more books of either type. This also means a
+        // restart won't clobber a title/description a faculty member has
+        // since edited on the seeded books.
+        for (const [type, title, desc, position] of [
+            ['mbbs', 'MBBS Level', `Core chapter-wise ${name} teaching content for MBBS curriculum.`, 0],
+            ['reference', 'Reference & Resources', `Reference book material, PPTs and videos for ${name}.`, 1]
+        ]) {
+            const { rows: [existing] } = await pool.query(
+                `SELECT id FROM books WHERE section_id=$1 AND type=$2 LIMIT 1`, [sectionId, type]
+            );
+            if (!existing) {
+                await pool.query(
+                    `INSERT INTO books (section_id, type, title, description, position) VALUES ($1,$2,$3,$4,$5)`,
+                    [sectionId, type, title, desc, position]
+                );
+            }
+        }
 
         const chapters = SECTION_CHAPTERS[name];
         for (let c = 0; c < chapters.length; c++) {

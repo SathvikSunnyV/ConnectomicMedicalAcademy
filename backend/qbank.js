@@ -67,8 +67,19 @@ function init({ pool, authenticate, requireRole }) {
     // QUESTION BANK — faculty/admin CRUD + approval workflow
     // ============================================================
 
+    // Resolves a chapter by name (case-insensitive). Bulk imports from
+    // faculty key questions by chapterName rather than numeric IDs, since
+    // that's what they actually know off the top of their head.
+    async function findChapterByName(chapterName) {
+        if (!chapterName) return null;
+        const { rows: [chapter] } = await pool.query(
+            `SELECT id, section_id FROM chapters WHERE LOWER(name) = LOWER($1) LIMIT 1`, [chapterName.trim()]
+        );
+        return chapter || null;
+    }
+
     router.post('/api/qbank/questions', authenticate, requireRole('faculty', 'admin'), async (req, res) => {
-        const { sectionId, chapterId, questionText, optionA, optionB, optionC, optionD, correctAnswer, explanation, difficulty } = req.body;
+        const { sectionId, chapterId, questionText, optionA, optionB, optionC, optionD, correctAnswer, explanation, difficulty, topic, estimatedTime } = req.body;
         if (!sectionId || !chapterId || !questionText?.trim() || !optionA?.trim() || !optionB?.trim() || !optionC?.trim() || !optionD?.trim() || !correctAnswer)
             return res.status(400).json({ error: 'Section, chapter, question text, all four options and the correct answer are required.' });
         if (!['A', 'B', 'C', 'D'].includes(correctAnswer))
@@ -79,10 +90,10 @@ function init({ pool, authenticate, requireRole }) {
             const { rows: [q] } = await pool.query(
                 `INSERT INTO question_bank
                  (section_id, chapter_id, question_text, option_a, option_b, option_c, option_d, correct_answer,
-                  explanation, difficulty, status, submitted_by, approved_by, approved_at)
-                 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING *`,
+                  explanation, difficulty, topic, estimated_time_sec, status, submitted_by, approved_by, approved_at)
+                 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) RETURNING *`,
                 [sectionId, chapterId, questionText.trim(), optionA.trim(), optionB.trim(), optionC.trim(), optionD.trim(),
-                 correctAnswer, explanation || null, difficulty || 'Moderate',
+                 correctAnswer, explanation || null, difficulty || 'Moderate', topic || null, estimatedTime || 60,
                  isAdmin ? 'approved' : 'pending', req.user.id, isAdmin ? req.user.id : null, isAdmin ? new Date() : null]
             );
             res.status(201).json({ success: true, question: q });
@@ -90,7 +101,10 @@ function init({ pool, authenticate, requireRole }) {
     });
 
     // Bulk JSON import. Admin-authored/imported questions go live
-    // immediately; faculty bulk imports queue for approval.
+    // immediately; faculty bulk imports queue for approval. Each item is
+    // keyed by chapterName (e.g. "Laws of Motion") -- sectionId/chapterId
+    // are still accepted directly for backward compatibility (the admin
+    // panel's dropdown-based import uses those).
     router.post('/api/qbank/questions/bulk', authenticate, requireRole('faculty', 'admin'), async (req, res) => {
         const { questions, sectionId: defaultSectionId, chapterId: defaultChapterId } = req.body;
         if (!Array.isArray(questions) || questions.length === 0)
@@ -100,10 +114,15 @@ function init({ pool, authenticate, requireRole }) {
         const inserted = [], errors = [];
         for (let i = 0; i < questions.length; i++) {
             const q = questions[i];
-            const sectionId = q.sectionId || defaultSectionId;
-            const chapterId = q.chapterId || defaultChapterId;
             try {
-                if (!sectionId || !chapterId) throw new Error('sectionId and chapterId are required (select above, or set per-question).');
+                let sectionId = q.sectionId || defaultSectionId;
+                let chapterId = q.chapterId || defaultChapterId;
+                if (q.chapterName) {
+                    const chapter = await findChapterByName(q.chapterName);
+                    if (!chapter) throw new Error(`No chapter named "${q.chapterName}" was found.`);
+                    chapterId = chapter.id; sectionId = chapter.section_id;
+                }
+                if (!sectionId || !chapterId) throw new Error('chapterName (or sectionId/chapterId) is required.');
                 if (!q.questionText || !q.optionA || !q.optionB || !q.optionC || !q.optionD || !q.correctAnswer)
                     throw new Error('questionText, optionA-D and correctAnswer are all required.');
                 if (!['A', 'B', 'C', 'D'].includes(q.correctAnswer)) throw new Error('correctAnswer must be A, B, C, or D.');
@@ -111,10 +130,10 @@ function init({ pool, authenticate, requireRole }) {
                 const { rows: [row] } = await pool.query(
                     `INSERT INTO question_bank
                      (section_id, chapter_id, question_text, option_a, option_b, option_c, option_d, correct_answer,
-                      explanation, difficulty, status, submitted_by, approved_by, approved_at)
-                     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING id`,
+                      explanation, difficulty, topic, estimated_time_sec, status, submitted_by, approved_by, approved_at)
+                     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) RETURNING id`,
                     [sectionId, chapterId, q.questionText, q.optionA, q.optionB, q.optionC, q.optionD, q.correctAnswer,
-                     q.explanation || null, q.difficulty || 'Moderate',
+                     q.explanation || null, q.difficulty || 'Moderate', q.topic || null, q.estimatedTime || 60,
                      isAdmin ? 'approved' : 'pending', req.user.id, isAdmin ? req.user.id : null, isAdmin ? new Date() : null]
                 );
                 inserted.push(row.id);
@@ -498,6 +517,47 @@ function init({ pool, authenticate, requireRole }) {
             );
             res.json({ success: true });
         } catch (err) { console.error(err); res.status(500).json({ error: 'Server error while removing the question.' }); }
+    });
+
+    // Add a whole chapter's worth of questions at once. If questionCount is
+    // given, that many are picked at random from the chapter's approved
+    // bank; if omitted, every approved question in the chapter is added.
+    // Lets faculty build a grand test by chapter selection instead of
+    // hand-picking every individual question.
+    router.post('/api/faculty/tests/:id/chapters', authenticate, requireRole('faculty'), async (req, res) => {
+        const { chapterId, questionCount } = req.body;
+        if (!chapterId) return res.status(400).json({ error: 'chapterId is required.' });
+        try {
+            const { rows: [test] } = await pool.query(
+                `SELECT * FROM generated_tests WHERE id=$1 AND created_by=$2 AND status='draft'`, [req.params.id, req.user.id]
+            );
+            if (!test) return res.status(404).json({ error: 'Draft test not found.' });
+
+            const { rows: candidates } = await pool.query(
+                `SELECT q.id FROM question_bank q
+                 WHERE q.chapter_id=$1 AND q.status='approved'
+                 AND q.id NOT IN (SELECT question_id FROM generated_test_questions WHERE test_id=$2)`,
+                [chapterId, req.params.id]
+            );
+            if (!candidates.length) return res.status(400).json({ error: 'No unused approved questions are available in that chapter.' });
+
+            const picked = questionCount ? shuffle(candidates).slice(0, questionCount) : candidates;
+            const { rows: [maxPos] } = await pool.query(
+                `SELECT COALESCE(MAX(position), -1) AS max_pos FROM generated_test_questions WHERE test_id=$1`, [req.params.id]
+            );
+            let pos = parseInt(maxPos.max_pos, 10) + 1;
+            for (const c of picked) {
+                await pool.query(
+                    `INSERT INTO generated_test_questions (test_id, question_id, position) VALUES ($1,$2,$3) ON CONFLICT (test_id, question_id) DO NOTHING`,
+                    [req.params.id, c.id, pos++]
+                );
+            }
+            await pool.query(
+                `UPDATE generated_tests SET question_count = (SELECT COUNT(*) FROM generated_test_questions WHERE test_id=$1) WHERE id=$1`,
+                [req.params.id]
+            );
+            res.json({ success: true, added: picked.length });
+        } catch (err) { console.error(err); res.status(500).json({ error: 'Server error while adding the chapter.' }); }
     });
 
     router.post('/api/faculty/tests/:id/publish', authenticate, requireRole('faculty'), async (req, res) => {

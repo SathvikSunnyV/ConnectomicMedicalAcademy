@@ -6,15 +6,25 @@ const express = require('express');
 const cors = require('cors');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const multer = require('multer');
 const { pool, initSchema } = require('./db');
 const { sendOtpEmail } = require('./mailer');
 const { sendOtpSms } = require('./sms');
+const storage = require('./storage');
 const qbank = require('./qbank');
 
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: '5mb' }));
 app.use(express.static(path.join(__dirname, '..', 'frontend', 'dist')));
+
+// Multer parses multipart/form-data only -- for a plain JSON request it
+// just calls next() without touching req.body, so these routes can accept
+// EITHER a JSON body (link-based material) OR a multipart upload (file),
+// same endpoint either way. Memory storage since files are streamed
+// straight through to R2, never written to local disk.
+const uploadDoc = multer({ storage: multer.memoryStorage(), limits: { fileSize: 100 * 1024 * 1024 } }); // 100MB — PPT/PDF
+const uploadVideo = multer({ storage: multer.memoryStorage(), limits: { fileSize: 1024 * 1024 * 1024 } }); // 1GB — lecture video
 
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-me';
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '30d';
@@ -346,6 +356,124 @@ app.get('/api/books/:bookId/general', authenticate, async (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
+// FACULTY: sections / books / chapters — the dropdowns faculty organize
+// content under. Full CRUD so faculty aren't stuck with only the seeded
+// curriculum. No approval workflow here (unlike question bank) -- this is
+// structural content, not exam content.
+// ---------------------------------------------------------------------------
+app.post('/api/faculty/sections', authenticate, requireRole('faculty', 'admin'), async (req, res) => {
+    const { name, position } = req.body;
+    if (!name?.trim()) return res.status(400).json({ error: 'Section name is required.' });
+    try {
+        const { rows: [section] } = await pool.query(
+            `INSERT INTO sections (name, position, created_by) VALUES ($1,$2,$3) RETURNING *`,
+            [name.trim(), position || 0, req.user.id]
+        );
+        res.status(201).json({ success: true, section });
+    } catch (err) {
+        if (err.code === '23505') return res.status(409).json({ error: 'A subject with this name already exists.' });
+        console.error(err); res.status(500).json({ error: 'Server error while creating the subject.' });
+    }
+});
+
+app.put('/api/faculty/sections/:id', authenticate, requireRole('faculty', 'admin'), async (req, res) => {
+    const { name, position } = req.body;
+    if (!name?.trim()) return res.status(400).json({ error: 'Section name is required.' });
+    try {
+        const { rows: [section] } = await pool.query(
+            `UPDATE sections SET name=$1, position=COALESCE($2, position) WHERE id=$3 RETURNING *`,
+            [name.trim(), position, req.params.id]
+        );
+        if (!section) return res.status(404).json({ error: 'Subject not found.' });
+        res.json({ success: true, section });
+    } catch (err) {
+        if (err.code === '23505') return res.status(409).json({ error: 'A subject with this name already exists.' });
+        console.error(err); res.status(500).json({ error: 'Server error while updating the subject.' });
+    }
+});
+
+app.delete('/api/faculty/sections/:id', authenticate, requireRole('faculty', 'admin'), async (req, res) => {
+    try {
+        // Cascades to that subject's books/chapters/notes/materials/lectures/
+        // question bank/generated tests via existing FK ON DELETE CASCADE.
+        await pool.query(`DELETE FROM sections WHERE id=$1`, [req.params.id]);
+        res.json({ success: true });
+    } catch (err) { console.error(err); res.status(500).json({ error: 'Server error while deleting the subject.' }); }
+});
+
+app.post('/api/faculty/books', authenticate, requireRole('faculty', 'admin'), async (req, res) => {
+    const { sectionId, type, title, description, position } = req.body;
+    if (!sectionId || !['mbbs', 'reference'].includes(type) || !title?.trim())
+        return res.status(400).json({ error: 'Subject, type (mbbs/reference) and title are required.' });
+    try {
+        const { rows: [book] } = await pool.query(
+            `INSERT INTO books (section_id, type, title, description, position, created_by) VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
+            [sectionId, type, title.trim(), description || null, position || 0, req.user.id]
+        );
+        res.status(201).json({ success: true, book });
+    } catch (err) { console.error(err); res.status(500).json({ error: 'Server error while creating the book.' }); }
+});
+
+app.put('/api/faculty/books/:id', authenticate, requireRole('faculty', 'admin'), async (req, res) => {
+    const { title, description, position } = req.body;
+    try {
+        const { rows: [book] } = await pool.query(
+            `UPDATE books SET title=COALESCE($1,title), description=$2, position=COALESCE($3,position) WHERE id=$4 RETURNING *`,
+            [title?.trim(), description, position, req.params.id]
+        );
+        if (!book) return res.status(404).json({ error: 'Book not found.' });
+        res.json({ success: true, book });
+    } catch (err) { console.error(err); res.status(500).json({ error: 'Server error while updating the book.' }); }
+});
+
+app.delete('/api/faculty/books/:id', authenticate, requireRole('faculty', 'admin'), async (req, res) => {
+    try {
+        await pool.query(`DELETE FROM books WHERE id=$1`, [req.params.id]);
+        res.json({ success: true });
+    } catch (err) { console.error(err); res.status(500).json({ error: 'Server error while deleting the book.' }); }
+});
+
+app.post('/api/faculty/chapters', authenticate, requireRole('faculty', 'admin'), async (req, res) => {
+    const { sectionId, name, position } = req.body;
+    if (!sectionId || !name?.trim()) return res.status(400).json({ error: 'Subject and chapter name are required.' });
+    try {
+        const { rows: [chapter] } = await pool.query(
+            `INSERT INTO chapters (section_id, name, position, created_by) VALUES ($1,$2,$3,$4) RETURNING *`,
+            [sectionId, name.trim(), position || 0, req.user.id]
+        );
+        res.status(201).json({ success: true, chapter });
+    } catch (err) {
+        if (err.code === '23505') return res.status(409).json({ error: 'A chapter with this name already exists in this subject.' });
+        console.error(err); res.status(500).json({ error: 'Server error while creating the chapter.' });
+    }
+});
+
+app.put('/api/faculty/chapters/:id', authenticate, requireRole('faculty', 'admin'), async (req, res) => {
+    const { name, position } = req.body;
+    if (!name?.trim()) return res.status(400).json({ error: 'Chapter name is required.' });
+    try {
+        const { rows: [chapter] } = await pool.query(
+            `UPDATE chapters SET name=$1, position=COALESCE($2,position) WHERE id=$3 RETURNING *`,
+            [name.trim(), position, req.params.id]
+        );
+        if (!chapter) return res.status(404).json({ error: 'Chapter not found.' });
+        res.json({ success: true, chapter });
+    } catch (err) {
+        if (err.code === '23505') return res.status(409).json({ error: 'A chapter with this name already exists in this subject.' });
+        console.error(err); res.status(500).json({ error: 'Server error while updating the chapter.' });
+    }
+});
+
+app.delete('/api/faculty/chapters/:id', authenticate, requireRole('faculty', 'admin'), async (req, res) => {
+    try {
+        // Cascades to notes/materials/lectures/question bank rows tied to
+        // this chapter via existing FK ON DELETE CASCADE / SET NULL.
+        await pool.query(`DELETE FROM chapters WHERE id=$1`, [req.params.id]);
+        res.json({ success: true });
+    } catch (err) { console.error(err); res.status(500).json({ error: 'Server error while deleting the chapter.' }); }
+});
+
+// ---------------------------------------------------------------------------
 // FACULTY: chapter notes — full CRUD + "my content" listing for management
 // ---------------------------------------------------------------------------
 app.get('/api/faculty/notes/mine', authenticate, requireRole('faculty'), async (req, res) => {
@@ -415,35 +543,73 @@ app.get('/api/faculty/materials/mine', authenticate, requireRole('faculty'), asy
     } catch (err) { console.error(err); res.status(500).json({ error: 'Server error while listing your materials.' }); }
 });
 
-app.post('/api/faculty/materials', authenticate, requireRole('faculty'), async (req, res) => {
+app.post('/api/faculty/materials', authenticate, requireRole('faculty'), uploadDoc.single('file'), async (req, res) => {
     const { bookId, chapterId, title, materialType, externalUrl, description } = req.body;
-    if (!bookId || !title?.trim() || !externalUrl?.trim())
-        return res.status(400).json({ error: 'Book, title and URL are required.' });
+    if (!bookId || !title?.trim()) return res.status(400).json({ error: 'Book and title are required.' });
+    if (!req.file && !externalUrl?.trim()) return res.status(400).json({ error: 'Provide either a file to upload or a link.' });
+
     try {
+        let sourceType, finalUrl, storageKey = null, fileSizeBytes = null;
+        if (req.file) {
+            const uploaded = await storage.uploadFile({
+                folder: 'materials', buffer: req.file.buffer,
+                originalName: req.file.originalname, contentType: req.file.mimetype
+            });
+            sourceType = 'file'; finalUrl = uploaded.url; storageKey = uploaded.key; fileSizeBytes = req.file.size;
+        } else {
+            sourceType = 'link'; finalUrl = externalUrl.trim();
+        }
         const { rows: [material] } = await pool.query(
-            `INSERT INTO materials (book_id, chapter_id, title, material_type, external_url, description, uploaded_by)
-             VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
-            [bookId, chapterId || null, title.trim(), materialType || 'link', externalUrl.trim(), description || null, req.user.id]
+            `INSERT INTO materials (book_id, chapter_id, title, material_type, external_url, description, uploaded_by, source_type, storage_key, file_size_bytes)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
+            [bookId, chapterId || null, title.trim(), materialType || 'link', finalUrl, description || null, req.user.id, sourceType, storageKey, fileSizeBytes]
         );
         res.status(201).json({ success: true, material });
-    } catch (err) { console.error(err); res.status(500).json({ error: 'Server error while saving the material.' }); }
+    } catch (err) {
+        if (err.code === 'STORAGE_NOT_CONFIGURED') return res.status(503).json({ error: err.message });
+        console.error(err); res.status(500).json({ error: 'Server error while saving the material.' });
+    }
 });
 
-app.put('/api/faculty/materials/:id', authenticate, requireRole('faculty'), async (req, res) => {
+app.put('/api/faculty/materials/:id', authenticate, requireRole('faculty'), uploadDoc.single('file'), async (req, res) => {
     const { title, materialType, externalUrl, description } = req.body;
     try {
+        const { rows: [existing] } = await pool.query(`SELECT * FROM materials WHERE id=$1 AND uploaded_by=$2`, [req.params.id, req.user.id]);
+        if (!existing) return res.status(404).json({ error: 'Material not found.' });
+
+        let sourceType = existing.source_type, finalUrl = existing.external_url,
+            storageKey = existing.storage_key, fileSizeBytes = existing.file_size_bytes;
+        if (req.file) {
+            const uploaded = await storage.uploadFile({
+                folder: 'materials', buffer: req.file.buffer,
+                originalName: req.file.originalname, contentType: req.file.mimetype
+            });
+            if (existing.storage_key) await storage.deleteFile(existing.storage_key); // replace, don't leak the old object
+            sourceType = 'file'; finalUrl = uploaded.url; storageKey = uploaded.key; fileSizeBytes = req.file.size;
+        } else if (externalUrl?.trim() && externalUrl.trim() !== existing.external_url) {
+            if (existing.storage_key) await storage.deleteFile(existing.storage_key); // switching from file to link
+            sourceType = 'link'; finalUrl = externalUrl.trim(); storageKey = null; fileSizeBytes = null;
+        }
+
         const { rows: [material] } = await pool.query(
-            `UPDATE materials SET title=$1, material_type=$2, external_url=$3, description=$4 WHERE id=$5 AND uploaded_by=$6 RETURNING *`,
-            [title, materialType, externalUrl, description || null, req.params.id, req.user.id]
+            `UPDATE materials SET title=$1, material_type=$2, external_url=$3, description=$4, source_type=$5, storage_key=$6, file_size_bytes=$7
+             WHERE id=$8 AND uploaded_by=$9 RETURNING *`,
+            [title || existing.title, materialType || existing.material_type, finalUrl, description ?? existing.description,
+             sourceType, storageKey, fileSizeBytes, req.params.id, req.user.id]
         );
-        if (!material) return res.status(404).json({ error: 'Material not found.' });
         res.json({ success: true, material });
-    } catch (err) { console.error(err); res.status(500).json({ error: 'Server error while updating the material.' }); }
+    } catch (err) {
+        if (err.code === 'STORAGE_NOT_CONFIGURED') return res.status(503).json({ error: err.message });
+        console.error(err); res.status(500).json({ error: 'Server error while updating the material.' });
+    }
 });
 
 app.delete('/api/faculty/materials/:id', authenticate, requireRole('faculty'), async (req, res) => {
     try {
-        await pool.query(`DELETE FROM materials WHERE id=$1 AND uploaded_by=$2`, [req.params.id, req.user.id]);
+        const { rows: [material] } = await pool.query(
+            `DELETE FROM materials WHERE id=$1 AND uploaded_by=$2 RETURNING storage_key`, [req.params.id, req.user.id]
+        );
+        if (material?.storage_key) await storage.deleteFile(material.storage_key);
         res.json({ success: true });
     } catch (err) { console.error(err); res.status(500).json({ error: 'Server error while deleting the material.' }); }
 });
@@ -465,34 +631,59 @@ app.get('/api/faculty/lectures/mine', authenticate, requireRole('faculty'), asyn
     } catch (err) { console.error(err); res.status(500).json({ error: 'Server error while listing your lectures.' }); }
 });
 
-app.post('/api/faculty/lectures', authenticate, requireRole('faculty'), async (req, res) => {
-    const { bookId, chapterId, title, url } = req.body;
-    if (!bookId || !title?.trim() || !url?.trim())
-        return res.status(400).json({ error: 'Book, title and URL are required.' });
+app.post('/api/faculty/lectures', authenticate, requireRole('faculty'), uploadVideo.single('file'), async (req, res) => {
+    const { bookId, chapterId, title } = req.body;
+    if (!bookId || !title?.trim()) return res.status(400).json({ error: 'Book and title are required.' });
+    if (!req.file) return res.status(400).json({ error: 'Lecture videos must be uploaded as a file (CDN-hosted only) -- links are not accepted.' });
     try {
+        const uploaded = await storage.uploadFile({
+            folder: 'lectures', buffer: req.file.buffer,
+            originalName: req.file.originalname, contentType: req.file.mimetype
+        });
         const { rows: [lecture] } = await pool.query(
-            `INSERT INTO lectures (book_id, chapter_id, title, url, uploaded_by) VALUES ($1,$2,$3,$4,$5) RETURNING *`,
-            [bookId, chapterId || null, title.trim(), url.trim(), req.user.id]
+            `INSERT INTO lectures (book_id, chapter_id, title, url, uploaded_by, storage_key, file_size_bytes)
+             VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
+            [bookId, chapterId || null, title.trim(), uploaded.url, req.user.id, uploaded.key, req.file.size]
         );
         res.status(201).json({ success: true, lecture });
-    } catch (err) { console.error(err); res.status(500).json({ error: 'Server error while saving the lecture.' }); }
+    } catch (err) {
+        if (err.code === 'STORAGE_NOT_CONFIGURED') return res.status(503).json({ error: err.message });
+        console.error(err); res.status(500).json({ error: 'Server error while saving the lecture.' });
+    }
 });
 
-app.put('/api/faculty/lectures/:id', authenticate, requireRole('faculty'), async (req, res) => {
-    const { title, url } = req.body;
+app.put('/api/faculty/lectures/:id', authenticate, requireRole('faculty'), uploadVideo.single('file'), async (req, res) => {
+    const { title } = req.body;
     try {
+        const { rows: [existing] } = await pool.query(`SELECT * FROM lectures WHERE id=$1 AND uploaded_by=$2`, [req.params.id, req.user.id]);
+        if (!existing) return res.status(404).json({ error: 'Lecture not found.' });
+
+        let url = existing.url, storageKey = existing.storage_key, fileSizeBytes = existing.file_size_bytes;
+        if (req.file) {
+            const uploaded = await storage.uploadFile({
+                folder: 'lectures', buffer: req.file.buffer,
+                originalName: req.file.originalname, contentType: req.file.mimetype
+            });
+            if (existing.storage_key) await storage.deleteFile(existing.storage_key); // replace, don't leak the old object
+            url = uploaded.url; storageKey = uploaded.key; fileSizeBytes = req.file.size;
+        }
         const { rows: [lecture] } = await pool.query(
-            `UPDATE lectures SET title=$1, url=$2 WHERE id=$3 AND uploaded_by=$4 RETURNING *`,
-            [title, url, req.params.id, req.user.id]
+            `UPDATE lectures SET title=$1, url=$2, storage_key=$3, file_size_bytes=$4 WHERE id=$5 AND uploaded_by=$6 RETURNING *`,
+            [title || existing.title, url, storageKey, fileSizeBytes, req.params.id, req.user.id]
         );
-        if (!lecture) return res.status(404).json({ error: 'Lecture not found.' });
         res.json({ success: true, lecture });
-    } catch (err) { console.error(err); res.status(500).json({ error: 'Server error while updating the lecture.' }); }
+    } catch (err) {
+        if (err.code === 'STORAGE_NOT_CONFIGURED') return res.status(503).json({ error: err.message });
+        console.error(err); res.status(500).json({ error: 'Server error while updating the lecture.' });
+    }
 });
 
 app.delete('/api/faculty/lectures/:id', authenticate, requireRole('faculty'), async (req, res) => {
     try {
-        await pool.query(`DELETE FROM lectures WHERE id=$1 AND uploaded_by=$2`, [req.params.id, req.user.id]);
+        const { rows: [lecture] } = await pool.query(
+            `DELETE FROM lectures WHERE id=$1 AND uploaded_by=$2 RETURNING storage_key`, [req.params.id, req.user.id]
+        );
+        if (lecture?.storage_key) await storage.deleteFile(lecture.storage_key);
         res.json({ success: true });
     } catch (err) { console.error(err); res.status(500).json({ error: 'Server error while deleting the lecture.' }); }
 });
