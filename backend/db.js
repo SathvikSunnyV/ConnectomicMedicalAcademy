@@ -119,6 +119,7 @@ async function initSchema() {
             role                TEXT NOT NULL DEFAULT 'student', -- student | faculty | admin
             name                TEXT NOT NULL,
             is_verified         BOOLEAN DEFAULT FALSE,
+            approval_status     TEXT NOT NULL DEFAULT 'approved' CHECK (approval_status IN ('pending','approved','rejected')), -- faculty need admin approval; students/admin are auto-approved
             onboarding_done     BOOLEAN DEFAULT FALSE,
             otp_code_hash       TEXT,
             otp_purpose         TEXT,   -- 'verify' | 'reset'
@@ -277,6 +278,16 @@ async function initSchema() {
             difficulty      TEXT,
             created_at      TIMESTAMPTZ DEFAULT NOW()
         );
+
+        -- Student blog -- open topic, admin can moderate/remove any post.
+        CREATE TABLE IF NOT EXISTS blog_posts (
+            id              SERIAL PRIMARY KEY,
+            author_id       INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            title           TEXT NOT NULL,
+            content         TEXT NOT NULL,
+            created_at      TIMESTAMPTZ DEFAULT NOW(),
+            updated_at      TIMESTAMPTZ DEFAULT NOW()
+        );
     `);
 
     await migrateContentSchema();
@@ -308,6 +319,11 @@ async function migrateContentSchema() {
 
         ALTER TABLE sections ADD COLUMN IF NOT EXISTS created_by INTEGER REFERENCES users(id) ON DELETE SET NULL;
         ALTER TABLE chapters ADD COLUMN IF NOT EXISTS created_by INTEGER REFERENCES users(id) ON DELETE SET NULL;
+
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS approval_status TEXT NOT NULL DEFAULT 'approved';
+        -- Existing faculty accounts predate the approval gate -- grandfather
+        -- them in as approved rather than silently locking out everyone who
+        -- already registered before this feature existed.
     `);
 }
 

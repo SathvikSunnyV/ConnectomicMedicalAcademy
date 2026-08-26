@@ -95,6 +95,7 @@ app.post('/api/register', async (req, res) => {
     if (phone && phone.replace(/\D/g, '').length < 7) return res.status(400).json({ error: 'Enter a valid phone number.' });
     if (password.length < 6) return res.status(400).json({ error: 'Password must be at least 6 characters.' });
     const finalRole = ['student', 'faculty'].includes(role) ? role : 'student';
+    const initialApprovalStatus = finalRole === 'faculty' ? 'pending' : 'approved';
 
     try {
         // Clean up any stale UNVERIFIED accounts that would collide on the
@@ -115,9 +116,9 @@ app.post('/api/register', async (req, res) => {
         const otpChannel = phone ? 'sms' : 'email';
 
         const { rows: [user] } = await pool.query(
-            `INSERT INTO users (email, phone, password_hash, role, name, otp_code_hash, otp_purpose, otp_channel, otp_expires_at, otp_attempts)
-             VALUES ($1,$2,$3,$4,$5,$6,'verify',$7,$8,0) RETURNING *`,
-            [email, phone, hash, finalRole, name.trim(), otpHash, otpChannel, expiresAt]
+            `INSERT INTO users (email, phone, password_hash, role, name, otp_code_hash, otp_purpose, otp_channel, otp_expires_at, otp_attempts, approval_status)
+             VALUES ($1,$2,$3,$4,$5,$6,'verify',$7,$8,0,$9) RETURNING *`,
+            [email, phone, hash, finalRole, name.trim(), otpHash, otpChannel, expiresAt, initialApprovalStatus]
         );
 
         const { channel, delivered } = await deliverOtp(user, otp);
@@ -156,6 +157,12 @@ app.post('/api/verify-otp', async (req, res) => {
         );
         if (user.role === 'faculty') {
             await pool.query(`INSERT INTO faculty (user_id, name) VALUES ($1,$2) ON CONFLICT (user_id) DO NOTHING`, [userId, user.name]);
+            if (user.approval_status !== 'approved') {
+                return res.json({
+                    pendingApproval: true, role: user.role,
+                    message: 'Your email/phone is verified. Your faculty account still needs admin approval before you can log in -- you\'ll be able to log in once that\'s done.'
+                });
+            }
         }
         res.json({ token: signToken(user), role: user.role, onboardingDone: user.onboarding_done });
     } catch (err) {
@@ -199,6 +206,14 @@ app.post('/api/login', async (req, res) => {
         const ok = await bcrypt.compare(password, match.password_hash);
         if (!ok) return res.status(401).json({ error: 'Invalid credentials.' });
         if (!match.is_verified) return res.status(403).json({ error: 'Please verify your account first.', needsVerification: true, userId: match.id });
+        if (match.role === 'faculty' && match.approval_status !== 'approved') {
+            return res.status(403).json({
+                error: match.approval_status === 'rejected'
+                    ? 'Your faculty account registration was not approved. Contact the admin for details.'
+                    : 'Your faculty account is pending admin approval. You\'ll be able to log in once an admin approves it.',
+                pendingApproval: true
+            });
+        }
 
         res.json({ token: signToken(match), role: match.role, onboardingDone: match.onboarding_done });
     } catch (err) {
@@ -696,6 +711,7 @@ app.get('/api/admin/stats', authenticate, requireRole('admin'), async (req, res)
         const { rows: [u] } = await pool.query(`SELECT
             COUNT(*) FILTER (WHERE role='student') AS students,
             COUNT(*) FILTER (WHERE role='faculty') AS faculty,
+            COUNT(*) FILTER (WHERE role='faculty' AND approval_status='pending') AS pending_faculty,
             COUNT(*) FILTER (WHERE role='student' AND is_verified) AS verified_students
             FROM users`);
         const { rows: [n] } = await pool.query(`SELECT COUNT(*) AS total FROM chapter_notes`);
@@ -703,6 +719,7 @@ app.get('/api/admin/stats', authenticate, requireRole('admin'), async (req, res)
         const { rows: [l] } = await pool.query(`SELECT COUNT(*) AS total FROM lectures`);
         res.json({
             students: parseInt(u.students, 10), faculty: parseInt(u.faculty, 10),
+            pendingFaculty: parseInt(u.pending_faculty, 10),
             verifiedStudents: parseInt(u.verified_students, 10),
             notes: parseInt(n.total, 10), materials: parseInt(m.total, 10), lectures: parseInt(l.total, 10)
         });
@@ -727,7 +744,7 @@ app.get('/api/admin/faculty', authenticate, requireRole('admin'), async (req, re
     const { search } = req.query;
     try {
         const { rows } = await pool.query(
-            `SELECT u.id, u.email, u.phone, u.name, u.is_verified, u.created_at, f.specialization
+            `SELECT u.id, u.email, u.phone, u.name, u.is_verified, u.approval_status, u.created_at, f.specialization
              FROM users u LEFT JOIN faculty f ON f.user_id = u.id
              WHERE u.role='faculty' AND ($1::text IS NULL OR u.name ILIKE '%'||$1||'%' OR u.email ILIKE '%'||$1||'%' OR u.phone ILIKE '%'||$1||'%')
              ORDER BY u.created_at DESC`,
@@ -735,6 +752,29 @@ app.get('/api/admin/faculty', authenticate, requireRole('admin'), async (req, re
         );
         res.json(rows);
     } catch (err) { console.error(err); res.status(500).json({ error: 'Server error while listing faculty.' }); }
+});
+
+app.get('/api/admin/faculty/pending', authenticate, requireRole('admin'), async (req, res) => {
+    try {
+        const { rows } = await pool.query(
+            `SELECT id, email, phone, name, is_verified, created_at FROM users
+             WHERE role='faculty' AND approval_status='pending' ORDER BY created_at ASC`
+        );
+        res.json(rows);
+    } catch (err) { console.error(err); res.status(500).json({ error: 'Server error while listing pending faculty.' }); }
+});
+
+app.post('/api/admin/faculty/:id/approve', authenticate, requireRole('admin'), async (req, res) => {
+    const { action } = req.body;
+    if (!['approve', 'reject'].includes(action)) return res.status(400).json({ error: 'action must be approve or reject.' });
+    try {
+        const { rows: [user] } = await pool.query(
+            `UPDATE users SET approval_status=$1 WHERE id=$2 AND role='faculty' RETURNING id, name, approval_status`,
+            [action === 'approve' ? 'approved' : 'rejected', req.params.id]
+        );
+        if (!user) return res.status(404).json({ error: 'Faculty account not found.' });
+        res.json({ success: true, user });
+    } catch (err) { console.error(err); res.status(500).json({ error: 'Server error while updating the faculty account.' }); }
 });
 
 app.delete('/api/admin/users/:id', authenticate, requireRole('admin'), async (req, res) => {
@@ -760,6 +800,71 @@ app.post('/api/admin/impersonate/:id', authenticate, requireRole('admin'), async
 // TEST ENGINE — question bank, chapter/subject/grand tests, progress
 // ---------------------------------------------------------------------------
 app.use(qbank.init({ pool, authenticate, requireRole }));
+
+// ---------------------------------------------------------------------------
+// STUDENT BLOG — open topic, any student can write, any logged-in user can
+// read, author can edit/delete their own, admin can delete any (moderation).
+// ---------------------------------------------------------------------------
+app.post('/api/blogs', authenticate, requireRole('student'), async (req, res) => {
+    const { title, content } = req.body;
+    if (!title?.trim() || !content?.trim()) return res.status(400).json({ error: 'Title and content are required.' });
+    try {
+        const { rows: [post] } = await pool.query(
+            `INSERT INTO blog_posts (author_id, title, content) VALUES ($1,$2,$3) RETURNING *`,
+            [req.user.id, title.trim(), content.trim()]
+        );
+        res.status(201).json({ success: true, post });
+    } catch (err) { console.error(err); res.status(500).json({ error: 'Server error while publishing the post.' }); }
+});
+
+app.get('/api/blogs', authenticate, async (req, res) => {
+    try {
+        const { rows } = await pool.query(
+            `SELECT b.id, b.title, b.content, b.created_at, b.updated_at, b.author_id, u.name AS author_name
+             FROM blog_posts b JOIN users u ON u.id = b.author_id
+             ORDER BY b.created_at DESC LIMIT 200`
+        );
+        res.json(rows);
+    } catch (err) { console.error(err); res.status(500).json({ error: 'Server error while loading posts.' }); }
+});
+
+app.get('/api/blogs/:id', authenticate, async (req, res) => {
+    try {
+        const { rows: [post] } = await pool.query(
+            `SELECT b.*, u.name AS author_name FROM blog_posts b JOIN users u ON u.id = b.author_id WHERE b.id=$1`,
+            [req.params.id]
+        );
+        if (!post) return res.status(404).json({ error: 'Post not found.' });
+        res.json(post);
+    } catch (err) { console.error(err); res.status(500).json({ error: 'Server error while loading the post.' }); }
+});
+
+app.put('/api/blogs/:id', authenticate, requireRole('student'), async (req, res) => {
+    const { title, content } = req.body;
+    if (!title?.trim() || !content?.trim()) return res.status(400).json({ error: 'Title and content are required.' });
+    try {
+        const { rows: [post] } = await pool.query(
+            `UPDATE blog_posts SET title=$1, content=$2, updated_at=NOW() WHERE id=$3 AND author_id=$4 RETURNING *`,
+            [title.trim(), content.trim(), req.params.id, req.user.id]
+        );
+        if (!post) return res.status(404).json({ error: 'Post not found, or you\'re not its author.' });
+        res.json({ success: true, post });
+    } catch (err) { console.error(err); res.status(500).json({ error: 'Server error while updating the post.' }); }
+});
+
+app.delete('/api/blogs/:id', authenticate, async (req, res) => {
+    try {
+        const isAdmin = req.user.role === 'admin';
+        const { rows: [post] } = await pool.query(
+            isAdmin
+                ? `DELETE FROM blog_posts WHERE id=$1 RETURNING id`
+                : `DELETE FROM blog_posts WHERE id=$1 AND author_id=$2 RETURNING id`,
+            isAdmin ? [req.params.id] : [req.params.id, req.user.id]
+        );
+        if (!post) return res.status(404).json({ error: 'Post not found, or you don\'t have permission to delete it.' });
+        res.json({ success: true });
+    } catch (err) { console.error(err); res.status(500).json({ error: 'Server error while deleting the post.' }); }
+});
 
 app.get('/api/health', (req, res) => res.json({ ok: true, name: 'Connectomic Medical Academy' }));
 
