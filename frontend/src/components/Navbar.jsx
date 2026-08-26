@@ -27,6 +27,7 @@ export default function Navbar() {
       </Link>
       <div className="nav-links">
         {currentUser && <Link className={`nav-btn ${isActive('/sections') ? 'active' : ''}`} to="/sections">Sections</Link>}
+        {currentUser && <Link className={`nav-btn ${isActive('/blog') ? 'active' : ''}`} to="/blog">Blog</Link>}
         {currentUser?.role === 'student' && <Link className={`nav-btn ${isActive('/tests') ? 'active' : ''}`} to="/tests">Test Centre</Link>}
         {currentUser?.role === 'faculty' && <Link className={`nav-btn ${isActive('/faculty') ? 'active' : ''}`} to="/faculty">Faculty Hub</Link>}
         {currentUser?.role === 'admin' && <Link className={`nav-btn ${isActive('/admin') ? 'active' : ''}`} to="/admin">Admin</Link>}

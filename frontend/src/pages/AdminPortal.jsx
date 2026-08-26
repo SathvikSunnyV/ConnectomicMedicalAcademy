@@ -11,11 +11,12 @@ export default function AdminPortal() {
   const [search, setSearch] = useState('');
   const [students, setStudents] = useState([]);
   const [faculty, setFaculty] = useState([]);
+  const [pendingFaculty, setPendingFaculty] = useState([]);
   const { startImpersonation } = useAuth();
   const { showToast } = useToast();
   const navigate = useNavigate();
 
-  useEffect(() => { loadStats(); loadUsers(); }, []);
+  useEffect(() => { loadStats(); loadUsers(); loadPendingFaculty(); }, []);
   useEffect(() => { loadUsers(); }, [search, tab]);
 
   function loadStats() {
@@ -25,7 +26,19 @@ export default function AdminPortal() {
   function loadUsers() {
     const qs = search ? `?search=${encodeURIComponent(search)}` : '';
     if (tab === 'students') api(`/api/admin/students${qs}`).then(setStudents).catch(() => {});
-    else api(`/api/admin/faculty${qs}`).then(setFaculty).catch(() => {});
+    else if (tab === 'faculty') api(`/api/admin/faculty${qs}`).then(setFaculty).catch(() => {});
+  }
+
+  function loadPendingFaculty() {
+    api('/api/admin/faculty/pending').then(setPendingFaculty).catch(() => {});
+  }
+
+  async function handleFacultyApproval(id, action) {
+    try {
+      await api(`/api/admin/faculty/${id}/approve`, { method: 'POST', body: JSON.stringify({ action }) });
+      showToast(action === 'approve' ? 'Faculty account approved.' : 'Faculty account rejected.');
+      loadPendingFaculty(); loadUsers(); loadStats();
+    } catch (err) { showToast(err.message, 'error'); }
   }
 
   async function handleDelete(id, label) {
@@ -59,8 +72,30 @@ export default function AdminPortal() {
       {stats && (
         <div className="grid-3">
           <div className="card" style={{ textAlign: 'center' }}><h3>{stats.students}</h3><p className="helper-text">Students ({stats.verifiedStudents} verified)</p></div>
-          <div className="card" style={{ textAlign: 'center' }}><h3>{stats.faculty}</h3><p className="helper-text">Faculty</p></div>
+          <div className="card" style={{ textAlign: 'center' }}><h3>{stats.faculty}</h3><p className="helper-text">Faculty ({stats.pendingFaculty} pending approval)</p></div>
           <div className="card" style={{ textAlign: 'center' }}><h3>{stats.notes} / {stats.materials} / {stats.lectures}</h3><p className="helper-text">Notes / Materials / Lectures</p></div>
+        </div>
+      )}
+
+      {pendingFaculty.length > 0 && (
+        <div className="card mt-1">
+          <h3>Pending faculty approval ({pendingFaculty.length})</h3>
+          <p className="helper-text">These faculty accounts have verified their email/phone but can't log in until you approve them.</p>
+          {pendingFaculty.map(f => {
+            const contact = [f.email, f.phone].filter(Boolean).join(' · ') || '—';
+            return (
+              <div key={f.id} className="chapter-row">
+                <span>
+                  <strong>{f.name}</strong> {f.is_verified ? '' : <span className="chip chip-reference">unverified</span>}<br />
+                  <span className="helper-text">{contact}</span>
+                </span>
+                <span>
+                  <button className="btn btn-secondary btn-sm" onClick={() => handleFacultyApproval(f.id, 'approve')}>Approve</button>
+                  <button className="btn btn-danger btn-sm" style={{ marginLeft: '0.4rem' }} onClick={() => handleFacultyApproval(f.id, 'reject')}>Reject</button>
+                </span>
+              </div>
+            );
+          })}
         </div>
       )}
 
@@ -68,6 +103,7 @@ export default function AdminPortal() {
         <button className={`nav-btn ${tab === 'students' ? 'active' : ''}`} onClick={() => setTab('students')}>Students</button>
         <button className={`nav-btn ${tab === 'faculty' ? 'active' : ''}`} onClick={() => setTab('faculty')}>Faculty</button>
         <button className={`nav-btn ${tab === 'qbank' ? 'active' : ''}`} onClick={() => setTab('qbank')}>Question Bank</button>
+        <button className={`nav-btn ${tab === 'blog' ? 'active' : ''}`} onClick={() => setTab('blog')}>Blog</button>
       </div>
 
       {(tab === 'students' || tab === 'faculty') && (
@@ -85,7 +121,11 @@ export default function AdminPortal() {
               return (
                 <div key={u.id} className="chapter-row">
                   <span>
-                    <strong>{u.name}</strong> {u.is_verified ? '' : <span className="chip chip-reference">unverified</span>}<br />
+                    <strong>{u.name}</strong> {u.is_verified ? '' : <span className="chip chip-reference">unverified</span>}
+                    {tab === 'faculty' && u.approval_status !== 'approved' && (
+                      <span className={`chip ${u.approval_status === 'rejected' ? 'chip-reference' : 'chip-mbbs'}`} style={{ marginLeft: '0.3rem' }}>{u.approval_status}</span>
+                    )}
+                    <br />
                     <span className="helper-text">{contact}{extra}</span>
                   </span>
                   <span>
@@ -100,6 +140,43 @@ export default function AdminPortal() {
       )}
 
       {tab === 'qbank' && <AdminQuestionBank />}
+      {tab === 'blog' && <AdminBlogModeration />}
+    </div>
+  );
+}
+
+function AdminBlogModeration() {
+  const { showToast } = useToast();
+  const [posts, setPosts] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => { load(); }, []);
+  function load() { api('/api/blogs').then(setPosts).catch(() => {}).finally(() => setLoading(false)); }
+
+  async function handleDelete(id, title) {
+    if (!confirm(`Delete "${title}"? This cannot be undone.`)) return;
+    try {
+      await api(`/api/blogs/${id}`, { method: 'DELETE' });
+      showToast('Post deleted.');
+      load();
+    } catch (err) { showToast(err.message, 'error'); }
+  }
+
+  return (
+    <div className="card mt-1">
+      <h3>Student blog posts ({posts.length})</h3>
+      <p className="helper-text">Moderate any post here — this is the only place admin deletes from; the student-facing Blog page only shows a delete option to each post's own author.</p>
+      {loading && <div className="spinner" />}
+      {!loading && posts.length === 0 && <p className="helper-text">No posts yet.</p>}
+      {posts.map(p => (
+        <div key={p.id} className="chapter-row">
+          <span>
+            <strong>{p.title}</strong><br />
+            <span className="helper-text">{p.author_name} · {new Date(p.created_at).toLocaleString()}</span>
+          </span>
+          <button className="btn btn-danger btn-sm" onClick={() => handleDelete(p.id, p.title)}>Delete</button>
+        </div>
+      ))}
     </div>
   );
 }

@@ -24,6 +24,11 @@ export default function VerifyOtp() {
     setBusy(true);
     try {
       const data = await api('/api/verify-otp', { method: 'POST', body: JSON.stringify({ userId, otp }) });
+      if (data.pendingApproval) {
+        showToast(data.message, 'success');
+        navigate('/login');
+        return;
+      }
       await loginWithToken(data.token);
       showToast('Account verified!');
       navigate(data.onboardingDone ? '/sections' : '/onboarding');

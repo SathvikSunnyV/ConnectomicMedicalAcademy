@@ -22,6 +22,8 @@ import TestCentre from './pages/TestCentre.jsx';
 import TakeTest from './pages/TakeTest.jsx';
 import TestReview from './pages/TestReview.jsx';
 import Progress from './pages/Progress.jsx';
+import BlogFeed from './pages/BlogFeed.jsx';
+import BlogPost from './pages/BlogPost.jsx';
 import { useAuth } from './context/AuthContext.jsx';
 
 export default function App() {
@@ -49,6 +51,9 @@ export default function App() {
         <Route path="/tests/:testId/take" element={<ProtectedRoute roles={['student']}><TakeTest /></ProtectedRoute>} />
         <Route path="/tests/attempts/:attemptId" element={<ProtectedRoute roles={['student']}><TestReview /></ProtectedRoute>} />
         <Route path="/progress" element={<ProtectedRoute roles={['student']}><Progress /></ProtectedRoute>} />
+
+        <Route path="/blog" element={<ProtectedRoute><BlogFeed /></ProtectedRoute>} />
+        <Route path="/blog/:id" element={<ProtectedRoute><BlogPost /></ProtectedRoute>} />
 
         <Route path="/faculty" element={<ProtectedRoute roles={['faculty']}><FacultyHub /></ProtectedRoute>} />
 

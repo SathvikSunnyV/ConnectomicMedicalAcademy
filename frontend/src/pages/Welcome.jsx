@@ -3,15 +3,15 @@ import { Link } from 'react-router-dom';
 import HillVideoModal from '../components/HillVideoModal.jsx';
 import { IconAnatomy, IconPhysiology, IconBiochemistry, IconNeuroscience, IconArrowRight, IconPlay } from '../components/Icons.jsx';
 
-const CDN = 'https://pub-8521d28a1e0d44bb9c7da4e801284a66.r2.dev';
+const CDN = 'https://pub-f4f030961eab45ada12b3d35525b2379.r2.dev';
 const HILLS = [
-  { label: '1 · Known → Unknown', url: `${CDN}/The_First_Hill.mp4` },
-  { label: '2 · Central Point', url: `${CDN}/The_Second_Hill.mp4` },
-  { label: '3 · Let Student Discover', url: `${CDN}/The_Third_Hill__Discovery.mp4` },
-  { label: '4 · One Key, Many Doors', url: `${CDN}/One_Key,_Many_Doors.mp4` },
-  { label: '5 · Recognise Patterns', url: `${CDN}/The_Fifth_and_Sixth_Hills.mp4` },
-  { label: '6 · Build Connections', url: `${CDN}/The_Fifth_and_Sixth_Hills.mp4` },
-  { label: '7 · Real-World Wisdom', url: `${CDN}/The_Seventh_Hill.mp4` }
+  { label: '1 · Known → Unknown', url: `${CDN}/The First Hill.mp4` },
+  { label: '2 · Central Point', url: `${CDN}/The Second Hill.mp4` },
+  { label: '3 · Let Student Discover', url: `${CDN}/The Third Hill.mp4` },
+  { label: '4 · One Key, Many Doors', url: `${CDN}/The Fourth Hill.mp4` },
+  { label: '5 · Recognise Patterns', url: `${CDN}/The Fifth Hill.mp4` },
+  { label: '6 · Build Connections', url: `${CDN}/The Sixth Hill.mp4` },
+  { label: '7 · Real-World Wisdom', url: `${CDN}/The Seventh Hill.mp4` }
 ];
 
 const SECTIONS = [
