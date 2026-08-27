@@ -418,8 +418,8 @@ app.delete('/api/faculty/sections/:id', authenticate, requireRole('faculty', 'ad
 
 app.post('/api/faculty/books', authenticate, requireRole('faculty', 'admin'), async (req, res) => {
     const { sectionId, type, title, description, position } = req.body;
-    if (!sectionId || !['mbbs', 'reference'].includes(type) || !title?.trim())
-        return res.status(400).json({ error: 'Subject, type (mbbs/reference) and title are required.' });
+    if (!sectionId || !['bridge', 'mbbs', 'reference'].includes(type) || !title?.trim())
+        return res.status(400).json({ error: 'Subject, type (bridge/mbbs/reference) and title are required.' });
     try {
         const { rows: [book] } = await pool.query(
             `INSERT INTO books (section_id, type, title, description, position, created_by) VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,

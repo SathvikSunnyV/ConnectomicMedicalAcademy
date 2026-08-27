@@ -156,7 +156,7 @@ async function initSchema() {
         CREATE TABLE IF NOT EXISTS books (
             id            SERIAL PRIMARY KEY,
             section_id    INTEGER NOT NULL REFERENCES sections(id) ON DELETE CASCADE,
-            type          TEXT NOT NULL CHECK (type IN ('mbbs','reference')),
+            type          TEXT NOT NULL CHECK (type IN ('bridge','mbbs','reference')),
             title         TEXT NOT NULL,
             description   TEXT,
             position      INTEGER NOT NULL DEFAULT 0,
@@ -317,6 +317,13 @@ async function migrateContentSchema() {
         ALTER TABLE books ADD COLUMN IF NOT EXISTS created_by INTEGER REFERENCES users(id) ON DELETE SET NULL;
         ALTER TABLE books DROP CONSTRAINT IF EXISTS books_section_id_type_key;
 
+        -- Widen the book "type" (site-level) constraint from mbbs/reference to
+        -- bridge/mbbs/reference now that the site has a third top-level
+        -- section (Bridge Course). Safe to re-run: drops and re-adds the
+        -- same check every startup, no data is touched.
+        ALTER TABLE books DROP CONSTRAINT IF EXISTS books_type_check;
+        ALTER TABLE books ADD CONSTRAINT books_type_check CHECK (type IN ('bridge','mbbs','reference'));
+
         ALTER TABLE sections ADD COLUMN IF NOT EXISTS created_by INTEGER REFERENCES users(id) ON DELETE SET NULL;
         ALTER TABLE chapters ADD COLUMN IF NOT EXISTS created_by INTEGER REFERENCES users(id) ON DELETE SET NULL;
 
@@ -356,8 +363,9 @@ async function seedSections() {
         // restart won't clobber a title/description a faculty member has
         // since edited on the seeded books.
         for (const [type, title, desc, position] of [
-            ['mbbs', 'MBBS Level', `Core chapter-wise ${name} teaching content for MBBS curriculum.`, 0],
-            ['reference', 'Reference & Resources', `Reference book material, PPTs and videos for ${name}.`, 1]
+            ['bridge', 'Bridge Course', `Foundational bridge-course content to prepare incoming students for ${name}.`, 0],
+            ['mbbs', 'MBBS Level', `Core chapter-wise ${name} teaching content for MBBS curriculum.`, 1],
+            ['reference', 'Reference & Postgraduate', `Reference book material, PPTs and videos for ${name}, including postgraduate-level resources.`, 2]
         ]) {
             const { rows: [existing] } = await pool.query(
                 `SELECT id FROM books WHERE section_id=$1 AND type=$2 LIMIT 1`, [sectionId, type]
