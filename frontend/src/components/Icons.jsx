@@ -65,6 +65,17 @@ export function IconNeuroscience(props) { // brain
   );
 }
 
+export function IconBridge(props) { // suspension bridge -- bridge course
+  return (
+    <svg width={28} height={28} viewBox="0 0 24 24" {...base} {...props}>
+      <path d="M3 16h18" />
+      <path d="M3 16v-2.5A9 9 0 0 1 12 5a9 9 0 0 1 9 8.5V16" />
+      <path d="M6.5 16v-3.8" /><path d="M9.5 16v-5.6" /><path d="M14.5 16v-5.6" /><path d="M17.5 16v-3.8" />
+      <path d="M12 5v11" />
+    </svg>
+  );
+}
+
 export function IconBook(props) {
   return (
     <svg width={20} height={20} viewBox="0 0 24 24" {...base} {...props}>
@@ -221,9 +232,17 @@ export const SECTION_ICON_MAP = {
 };
 
 export const BOOK_ICON_MAP = {
+  bridge: IconBridge,
   mbbs: IconBook,
   reference: IconLibrary
 };
+
+// The three top-level site divisions, in display order.
+export const LEVELS = [
+  { key: 'bridge', label: 'Bridge Course', tagline: 'Foundational content to prepare incoming students.', Icon: IconBridge },
+  { key: 'mbbs', label: 'MBBS Level', tagline: 'Core chapter-wise teaching content for the MBBS curriculum.', Icon: IconBook },
+  { key: 'reference', label: 'Reference & Postgraduate', tagline: 'Reference books, PPTs, videos and postgraduate-level material.', Icon: IconLibrary }
+];
 
 export function materialIconFor(type) {
   if (type === 'ppt') return IconPresentation;

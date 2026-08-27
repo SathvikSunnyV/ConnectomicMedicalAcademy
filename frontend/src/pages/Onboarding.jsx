@@ -5,7 +5,7 @@ import { useAuth } from '../context/AuthContext.jsx';
 import { useToast } from '../context/ToastContext.jsx';
 
 export default function Onboarding() {
-  const [phase, setPhase] = useState('1st MBBS');
+  const [phase, setPhase] = useState('Bridge Course');
   const [state, setState] = useState('');
   const [hours, setHours] = useState('');
   const [busy, setBusy] = useState(false);
@@ -34,12 +34,11 @@ export default function Onboarding() {
         <h3>Tell us about your studies</h3>
         <form onSubmit={handleSubmit}>
           <div className="field-group">
-            <label className="field-label" htmlFor="obPhase">Current phase</label>
+            <label className="field-label" htmlFor="obPhase">Current level</label>
             <select id="obPhase" value={phase} onChange={e => setPhase(e.target.value)}>
-              <option>1st MBBS</option>
-              <option>2nd MBBS</option>
-              <option>Final MBBS Part 1</option>
-              <option>Final MBBS Part 2</option>
+              <option>Bridge Course</option>
+              <option>MBBS</option>
+              <option>PG / Reference</option>
             </select>
           </div>
           <div className="field-group">

@@ -9,6 +9,8 @@ export default function BookDetail() {
   const navigate = useNavigate();
   const [book, setBook] = useState(location.state?.book || null);
   const sectionName = location.state?.sectionName || '';
+  const level = location.state?.level || null;
+  const levelLabel = location.state?.levelLabel || '';
   const [chapters, setChapters] = useState(null);
   const [general, setGeneral] = useState(null);
   const [error, setError] = useState('');
@@ -29,7 +31,7 @@ export default function BookDetail() {
 
   return (
     <div className="page">
-      <button className="nav-btn" onClick={() => navigate(`/sections/${sectionId}`, { state: { name: sectionName } })}><IconArrowLeft /> Back</button>
+      <button className="nav-btn" onClick={() => navigate(`/sections/${sectionId}`, { state: { name: sectionName, level, levelLabel } })}><IconArrowLeft /> Back</button>
       <h2 className="mt-1 icon-row"><BookTypeIcon />{book?.title}</h2>
       <p className="helper-text">{book?.description}</p>
 
@@ -71,7 +73,7 @@ export default function BookDetail() {
             <div
               key={c.id}
               className="chapter-row"
-              onClick={() => navigate(`/sections/${sectionId}/books/${bookId}/chapters/${c.id}`, { state: { chapterName: c.name, book, sectionName } })}
+              onClick={() => navigate(`/sections/${sectionId}/books/${bookId}/chapters/${c.id}`, { state: { chapterName: c.name, book, sectionName, level, levelLabel } })}
             >
               <span>{c.name}</span><IconArrowRight className="helper-text" />
             </div>

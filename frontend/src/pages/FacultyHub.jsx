@@ -185,15 +185,16 @@ export default function FacultyHub() {
               <form onSubmit={addBook}>
                 <input className="field" placeholder="New book title" value={newBookTitle} onChange={e => setNewBookTitle(e.target.value)} />
                 <select className="mt-1" value={newBookType} onChange={e => setNewBookType(e.target.value)}>
+                  <option value="bridge">Bridge Course</option>
                   <option value="mbbs">MBBS Level</option>
-                  <option value="reference">Reference</option>
+                  <option value="reference">Reference &amp; Postgraduate</option>
                 </select>
                 <button className="btn btn-secondary btn-sm mt-1" disabled={busy}>Add book</button>
               </form>
             )}
             {books.map(b => (
               <div key={b.id} className="chapter-row">
-                <span>{b.title} <span className="helper-text">({b.type})</span></span>
+                <span>{b.title} <span className="helper-text">({b.type === 'bridge' ? 'Bridge Course' : b.type === 'mbbs' ? 'MBBS Level' : 'Reference & PG'})</span></span>
                 <button className="btn btn-danger btn-sm" onClick={() => deleteBook(b.id, b.title)}>Delete</button>
               </div>
             ))}
@@ -291,7 +292,7 @@ export default function FacultyHub() {
 
     return (
       <div className="card">
-        <h3>Add a material (link / PPT / reference book)</h3>
+        <h3>Add a material (PPT / material)</h3>
         <form onSubmit={handleSubmit}>
           <div className="field-group">
             <label className="field-label">Title</label>
@@ -301,9 +302,8 @@ export default function FacultyHub() {
             <div className="field-group">
               <label className="field-label">Type</label>
               <select value={type} onChange={e => setType(e.target.value)}>
-                <option value="link">Link</option>
                 <option value="ppt">PPT</option>
-                <option value="book">Reference book</option>
+                <option value="link">Material</option>
               </select>
             </div>
             <div className="field-group">

@@ -17,6 +17,10 @@
   --accent2-deep: #435A42;
   --accent2-soft: #DCE6D8;
 
+  --accent3: #B98868;       /* warm ochre -- Bridge Course */
+  --accent3-deep: #8C6142;
+  --accent3-soft: #EBDBC9;
+
   --gold: #B08A4E;          /* muted brass -- highlights, like gilt-edged book pages */
 
   --radius-lg: 20px;
@@ -150,6 +154,18 @@ textarea { font-family: 'SFMono-Regular', Menlo, monospace; font-size: 0.85rem; 
 .chip { display: inline-block; padding: 0.2rem 0.6rem; border-radius: 999px; font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; }
 .chip-mbbs { background: var(--accent-soft); color: var(--accent-deep); }
 .chip-reference { background: var(--accent2-soft); color: var(--accent2-deep); }
+.chip-bridge { background: var(--accent3-soft); color: var(--accent3-deep); }
+
+/* Level e-cards -- the three top-level site divisions (Bridge / MBBS / Reference). */
+.level-card { cursor: pointer; text-align: center; padding: 1.75rem 1.25rem; transition: transform 0.15s ease, box-shadow 0.15s ease; border-top: 4px solid var(--accent); }
+.level-card:hover { transform: translateY(-3px); box-shadow: 0 8px 20px rgba(0,0,0,0.08); }
+.level-card-bridge { border-top-color: var(--accent3); }
+.level-card-mbbs { border-top-color: var(--accent); }
+.level-card-reference { border-top-color: var(--accent2); }
+.level-card-icon { width: 52px; height: 52px; margin: 0 auto 0.75rem; }
+.level-card-bridge .level-card-icon { color: var(--accent3-deep); }
+.level-card-mbbs .level-card-icon { color: var(--accent-deep); }
+.level-card-reference .level-card-icon { color: var(--accent2-deep); }
 
 .toast-host { position: fixed; bottom: 1.2rem; left: 50%; transform: translateX(-50%); z-index: 3000; display: flex; flex-direction: column; gap: 0.5rem; align-items: center; }
 .toast { background: var(--ink); color: var(--paper); padding: 0.7rem 1.2rem; border-radius: 999px; font-size: 0.9rem; box-shadow: var(--shadow-soft); }

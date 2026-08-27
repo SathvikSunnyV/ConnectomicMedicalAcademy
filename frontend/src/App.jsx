@@ -12,6 +12,7 @@ import ForgotPassword from './pages/ForgotPassword.jsx';
 import ResetPassword from './pages/ResetPassword.jsx';
 import Onboarding from './pages/Onboarding.jsx';
 import Sections from './pages/Sections.jsx';
+import LevelSections from './pages/LevelSections.jsx';
 import SectionDetail from './pages/SectionDetail.jsx';
 import BookDetail from './pages/BookDetail.jsx';
 import ChapterDetail from './pages/ChapterDetail.jsx';
@@ -43,6 +44,7 @@ export default function App() {
 
         <Route path="/onboarding" element={<ProtectedRoute roles={['student', 'onboarding']}><Onboarding /></ProtectedRoute>} />
         <Route path="/sections" element={<ProtectedRoute><Sections /></ProtectedRoute>} />
+        <Route path="/sections/level/:level" element={<ProtectedRoute><LevelSections /></ProtectedRoute>} />
         <Route path="/sections/:sectionId" element={<ProtectedRoute><SectionDetail /></ProtectedRoute>} />
         <Route path="/sections/:sectionId/books/:bookId" element={<ProtectedRoute><BookDetail /></ProtectedRoute>} />
         <Route path="/sections/:sectionId/books/:bookId/chapters/:chapterId" element={<ProtectedRoute><ChapterDetail /></ProtectedRoute>} />

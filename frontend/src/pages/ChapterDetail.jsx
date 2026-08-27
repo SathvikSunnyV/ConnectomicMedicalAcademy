@@ -11,6 +11,8 @@ export default function ChapterDetail() {
   const chapterName = location.state?.chapterName || '';
   const book = location.state?.book;
   const sectionName = location.state?.sectionName || '';
+  const level = location.state?.level || null;
+  const levelLabel = location.state?.levelLabel || '';
 
   const [data, setData] = useState(null);
   const [error, setError] = useState('');
@@ -24,7 +26,7 @@ export default function ChapterDetail() {
     <div className="page">
       <button
         className="nav-btn"
-        onClick={() => navigate(`/sections/${sectionId}/books/${bookId}`, { state: { book, sectionName } })}
+        onClick={() => navigate(`/sections/${sectionId}/books/${bookId}`, { state: { book, sectionName, level, levelLabel } })}
       >
         <IconArrowLeft /> Back to chapters
       </button>

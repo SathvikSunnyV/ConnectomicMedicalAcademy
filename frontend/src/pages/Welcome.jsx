@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import HillVideoModal from '../components/HillVideoModal.jsx';
-import { IconAnatomy, IconPhysiology, IconBiochemistry, IconNeuroscience, IconArrowRight, IconPlay } from '../components/Icons.jsx';
+import { IconAnatomy, IconPhysiology, IconBiochemistry, IconNeuroscience, IconArrowRight, IconPlay, LEVELS } from '../components/Icons.jsx';
 
 const CDN = 'https://pub-f4f030961eab45ada12b3d35525b2379.r2.dev';
 const HILLS = [
@@ -53,13 +53,28 @@ export default function Welcome() {
 
       <Link to="/register" className="btn btn-primary mt-2">Start Your Journey <IconArrowRight /></Link>
 
+      <div className="eyebrow mt-2" style={{ marginTop: '2rem' }}>Three Levels, Organized Separately</div>
+      <p className="helper-text" style={{ maxWidth: 640, margin: '0 auto' }}>
+        Everything on the academy lives under one of three independent divisions -- each with its
+        own subjects, books, chapters and faculty uploads.
+      </p>
+      <div className="grid-3 mt-1" style={{ maxWidth: 1080, margin: '0.5rem auto 0' }}>
+        {LEVELS.map(({ key, label, tagline, Icon }) => (
+          <Link key={key} to="/register" className={`card level-card level-card-${key}`} style={{ color: 'inherit' }}>
+            <Icon className="level-card-icon" />
+            <h3>{label}</h3>
+            <p className="helper-text">{tagline}</p>
+          </Link>
+        ))}
+      </div>
+
       <div className="eyebrow mt-2" style={{ marginTop: '2rem' }}>The Four Sections</div>
       <div className="grid-4" style={{ textAlign: 'center', maxWidth: 1080, margin: '0.5rem auto 0' }}>
         {SECTIONS.map(({ Icon, name }) => (
           <div key={name} className="card section-icon-card">
             <Icon className="section-icon" />
             <h3>{name}</h3>
-            <p className="helper-text">MBBS Level + Reference, PPTs &amp; videos.</p>
+            <p className="helper-text">Bridge, MBBS &amp; Reference/PG content for every subject.</p>
           </div>
         ))}
       </div>
