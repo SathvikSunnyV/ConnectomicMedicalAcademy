@@ -1,7 +1,7 @@
 import React from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext.jsx';
-import { LogoMark, IconQuiz } from './Icons.jsx';
+import { IconQuiz } from './Icons.jsx';
 
 export default function Navbar() {
   const { currentUser, logout } = useAuth();
@@ -20,7 +20,7 @@ export default function Navbar() {
   return (
     <nav className="nav">
       <Link to="/" className="nav-brand">
-        <LogoMark size={28} />
+        <img src="/logo.png" alt="Connectomic Medical Academy" className="nav-logo-img" />
         <span className="nav-brand-text">
           Connectomic <strong>Medical Academy</strong>
         </span>

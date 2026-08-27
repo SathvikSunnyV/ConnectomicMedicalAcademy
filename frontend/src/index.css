@@ -88,7 +88,7 @@ textarea { font-family: 'SFMono-Regular', Menlo, monospace; font-size: 0.85rem; 
 
 .nav {
   display: flex; justify-content: space-between; align-items: center;
-  padding: 0.85rem 1.75rem; border-bottom: 1px solid var(--border); background: var(--paper);
+  padding: 0.6rem 1.75rem; border-bottom: 1px solid var(--border); background: var(--paper);
   position: sticky; top: 0; z-index: 50;
 }
 .nav-brand {
@@ -96,6 +96,12 @@ textarea { font-family: 'SFMono-Regular', Menlo, monospace; font-size: 0.85rem; 
   letter-spacing: 0.01em;
 }
 .nav-brand svg { color: var(--accent-deep); flex-shrink: 0; }
+.nav-logo-img {
+  height: 56px; width: 56px; object-fit: cover; border-radius: 50%; flex-shrink: 0;
+  border: 2px solid var(--accent3, #B98868);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.18);
+}
+.nav-brand-text { font-size: 1.12rem; }
 .nav-brand-text strong { font-weight: 700; }
 .nav-links { display: flex; gap: 0.4rem; flex-wrap: wrap; align-items: center; }
 .nav-btn {
