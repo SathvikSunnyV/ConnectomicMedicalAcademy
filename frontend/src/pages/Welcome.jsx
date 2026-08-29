@@ -26,6 +26,7 @@ export default function Welcome() {
 
   return (
     <div className="page hero">
+      <img src="/logo.png" alt="Connectomic Medical Academy" className="hero-logo-img" />
       <div className="eyebrow">Connectomic Medical Academy</div>
       <h1>Anatomy · Physiology · Biochemistry · Neuroscience</h1>
       <p className="lead">
@@ -80,6 +81,15 @@ export default function Welcome() {
       </div>
 
       <HillVideoModal video={activeVideo} onClose={() => setActiveVideo(null)} />
+
+      <a
+        href="https://www.linkedin.com/in/sathvik-vadla-5881802b6/"
+        target="_blank"
+        rel="noopener noreferrer"
+        className="fixed-credit"
+      >
+        Developed by Sathvik
+      </a>
     </div>
   );
 }
