@@ -341,8 +341,16 @@ const SECTION_CHAPTERS = {
     'Anatomy': ['Upper Limb', 'Lower Limb', 'Thorax', 'Abdomen', 'Head & Neck', 'Neuroanatomy'],
     'Physiology': ['General Physiology', 'Nerve-Muscle Physiology', 'Blood', 'Cardiovascular System', 'Respiratory System', 'Renal Physiology'],
     'Biochemistry': ['Biomolecules', 'Enzymes', 'Carbohydrate Metabolism', 'Lipid Metabolism', 'Molecular Biology', 'Vitamins & Minerals'],
-    'Neuroscience': ['Neuroanatomy Basics', 'Neurophysiology', 'Neurotransmitters & Synaptic Signalling', 'Sensory Systems', 'Motor Systems', 'Higher Cognitive Functions']
+    'Neuroscience': ['Neuroanatomy Basics', 'Neurophysiology', 'Neurotransmitters & Synaptic Signalling', 'Sensory Systems', 'Motor Systems', 'Higher Cognitive Functions'],
+    'FMGE': ['High-Yield Recall', 'Previous Year Pattern', 'Mock Test Series', 'Quick Revision Notes']
 };
+
+// Bridge Course swaps Neuroscience for an FMGE subsection; every other level
+// (MBBS / Reference / FMGE-as-a-level) keeps the classic four preclinical
+// subjects. This only controls which subject cards are shown under each
+// level -- all sections still share the same books/chapters machinery.
+const BRIDGE_SUBSECTIONS = ['Anatomy', 'Physiology', 'Biochemistry', 'FMGE'];
+const STANDARD_SUBSECTIONS = ['Anatomy', 'Physiology', 'Biochemistry', 'Neuroscience'];
 
 async function seedSections() {
     const sectionNames = Object.keys(SECTION_CHAPTERS);
@@ -388,7 +396,7 @@ async function seedSections() {
             );
         }
     }
-    console.log('✅  Sections, books & chapters up to date (Anatomy / Physiology / Biochemistry / Neuroscience)');
+    console.log('✅  Sections, books & chapters up to date (Anatomy / Physiology / Biochemistry / Neuroscience / FMGE)');
 }
 
 async function seedAdmin() {
