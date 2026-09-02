@@ -12,10 +12,10 @@ export default function Sections() {
   return (
     <div className="page">
       <div className="eyebrow">Choose a level</div>
-      <h2>Bridge Course · MBBS Level · Reference &amp; Postgraduate</h2>
+      <h2>Bridge Course · MBBS Level · Reference &amp; Postgraduate · FMGE</h2>
       <p className="helper-text">Each section is organized separately -- pick where you want to study.</p>
 
-      <div className="grid-3 mt-1">
+      <div className="grid-4 mt-1">
         {LEVELS.map(({ key, label, tagline, Icon }) => (
           <div
             key={key}

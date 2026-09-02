@@ -223,6 +223,16 @@ export function IconClock(props) {
   );
 }
 
+export function IconFmge(props) { // target -- FMGE exam prep
+  return (
+    <svg width={28} height={28} viewBox="0 0 24 24" {...base} {...props}>
+      <circle cx="12" cy="12" r="9" />
+      <circle cx="12" cy="12" r="5" />
+      <circle cx="12" cy="12" r="1" fill="currentColor" />
+    </svg>
+  );
+}
+
 // Shared lookups so section/book/material icon logic lives in one place.
 export const SECTION_ICON_MAP = {
   Anatomy: IconAnatomy,
@@ -234,14 +244,16 @@ export const SECTION_ICON_MAP = {
 export const BOOK_ICON_MAP = {
   bridge: IconBridge,
   mbbs: IconBook,
-  reference: IconLibrary
+  reference: IconLibrary,
+  fmge: IconFmge
 };
 
-// The three top-level site divisions, in display order.
+// The four top-level site divisions, in display order.
 export const LEVELS = [
   { key: 'bridge', label: 'Bridge Course', tagline: 'Foundational content to prepare incoming students.', Icon: IconBridge },
   { key: 'mbbs', label: 'MBBS Level', tagline: 'Core chapter-wise teaching content for the MBBS curriculum.', Icon: IconBook },
-  { key: 'reference', label: 'Reference & Postgraduate', tagline: 'Reference books, PPTs, videos and postgraduate-level material.', Icon: IconLibrary }
+  { key: 'reference', label: 'Reference & Postgraduate', tagline: 'Reference books, PPTs, videos and postgraduate-level material.', Icon: IconLibrary },
+  { key: 'fmge', label: 'FMGE', tagline: 'Exam-focused high-yield notes, PPTs and question practice.', Icon: IconFmge }
 ];
 
 export function materialIconFor(type) {

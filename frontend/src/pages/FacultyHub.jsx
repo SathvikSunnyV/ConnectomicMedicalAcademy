@@ -188,13 +188,14 @@ export default function FacultyHub() {
                   <option value="bridge">Bridge Course</option>
                   <option value="mbbs">MBBS Level</option>
                   <option value="reference">Reference &amp; Postgraduate</option>
+                  <option value="fmge">FMGE</option>
                 </select>
                 <button className="btn btn-secondary btn-sm mt-1" disabled={busy}>Add book</button>
               </form>
             )}
             {books.map(b => (
               <div key={b.id} className="chapter-row">
-                <span>{b.title} <span className="helper-text">({b.type === 'bridge' ? 'Bridge Course' : b.type === 'mbbs' ? 'MBBS Level' : 'Reference & PG'})</span></span>
+                <span>{b.title} <span className="helper-text">({b.type === 'bridge' ? 'Bridge Course' : b.type === 'mbbs' ? 'MBBS Level' : b.type === 'fmge' ? 'FMGE' : 'Reference & PG'})</span></span>
                 <button className="btn btn-danger btn-sm" onClick={() => deleteBook(b.id, b.title)}>Delete</button>
               </div>
             ))}

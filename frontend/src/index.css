@@ -21,6 +21,10 @@
   --accent3-deep: #8C6142;
   --accent3-soft: #EBDBC9;
 
+  --accent4: #3E6B8C;       /* steel blue -- FMGE */
+  --accent4-deep: #2A4C64;
+  --accent4-soft: #D3E0EA;
+
   --gold: #B08A4E;          /* muted brass -- highlights, like gilt-edged book pages */
 
   --radius-lg: 20px;
@@ -162,17 +166,20 @@ textarea { font-family: 'SFMono-Regular', Menlo, monospace; font-size: 0.85rem; 
 .chip-mbbs { background: var(--accent-soft); color: var(--accent-deep); }
 .chip-reference { background: var(--accent2-soft); color: var(--accent2-deep); }
 .chip-bridge { background: var(--accent3-soft); color: var(--accent3-deep); }
+.chip-fmge { background: var(--accent4-soft); color: var(--accent4-deep); }
 
-/* Level e-cards -- the three top-level site divisions (Bridge / MBBS / Reference). */
+/* Level e-cards -- the four top-level site divisions (Bridge / MBBS / Reference / FMGE). */
 .level-card { cursor: pointer; text-align: center; padding: 1.75rem 1.25rem; transition: transform 0.15s ease, box-shadow 0.15s ease; border-top: 4px solid var(--accent); }
 .level-card:hover { transform: translateY(-3px); box-shadow: 0 8px 20px rgba(0,0,0,0.08); }
 .level-card-bridge { border-top-color: var(--accent3); }
 .level-card-mbbs { border-top-color: var(--accent); }
 .level-card-reference { border-top-color: var(--accent2); }
+.level-card-fmge { border-top-color: var(--accent4); }
 .level-card-icon { width: 52px; height: 52px; margin: 0 auto 0.75rem; }
 .level-card-bridge .level-card-icon { color: var(--accent3-deep); }
 .level-card-mbbs .level-card-icon { color: var(--accent-deep); }
 .level-card-reference .level-card-icon { color: var(--accent2-deep); }
+.level-card-fmge .level-card-icon { color: var(--accent4-deep); }
 
 .toast-host { position: fixed; bottom: 1.2rem; left: 50%; transform: translateX(-50%); z-index: 3000; display: flex; flex-direction: column; gap: 0.5rem; align-items: center; }
 .toast { background: var(--ink); color: var(--paper); padding: 0.7rem 1.2rem; border-radius: 999px; font-size: 0.9rem; box-shadow: var(--shadow-soft); }
@@ -207,4 +214,4 @@ footer { text-align: center; padding: 2rem 1rem; color: var(--ink-soft); font-si
   text-decoration: none; box-shadow: 0 2px 8px rgba(0,0,0,0.08); transition: opacity 0.15s ease;
 }
 .fixed-credit:hover { opacity: 1; }
-.fixed-credit a { color: inherit; text-decoration: none; }  
+.fixed-credit a { color: inherit; text-decoration: none; }

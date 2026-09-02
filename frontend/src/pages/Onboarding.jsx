@@ -39,6 +39,7 @@ export default function Onboarding() {
               <option>Bridge Course</option>
               <option>MBBS</option>
               <option>PG / Reference</option>
+              <option>FMGE</option>
             </select>
           </div>
           <div className="field-group">

@@ -28,12 +28,16 @@ export default function Welcome() {
     <div className="page hero">
       <img src="/logo.png" alt="Connectomic Medical Academy" className="hero-logo-img" />
       <div className="eyebrow">Connectomic Medical Academy</div>
-      <h1>Anatomy · Physiology · Biochemistry · Neuroscience</h1>
-      <p className="lead">
-        A connected, chapter-by-chapter path through pre-clinical MBBS subjects — built around
-        Prof. Konuri's Seven Hills of Knowledge. Each section pairs a core MBBS-level track with
-        a full reference library: reference book material, PPTs and videos.
-      </p>
+
+      <div className="grid-4 mt-1" style={{ maxWidth: 1080, margin: '0.5rem auto 0' }}>
+        {LEVELS.map(({ key, label, tagline, Icon }) => (
+          <Link key={key} to="/register" className={`card level-card level-card-${key}`} style={{ color: 'inherit' }}>
+            <Icon className="level-card-icon" />
+            <h3>{label}</h3>
+            <p className="helper-text">{tagline}</p>
+          </Link>
+        ))}
+      </div>
 
       <div className="ridge" aria-hidden="true">
         <svg viewBox="0 0 920 190" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
@@ -53,21 +57,6 @@ export default function Welcome() {
       </div>
 
       <Link to="/register" className="btn btn-primary mt-2">Start Your Journey <IconArrowRight /></Link>
-
-      <div className="eyebrow mt-2" style={{ marginTop: '2rem' }}>Three Levels, Organized Separately</div>
-      <p className="helper-text" style={{ maxWidth: 640, margin: '0 auto' }}>
-        Everything on the academy lives under one of three independent divisions -- each with its
-        own subjects, books, chapters and faculty uploads.
-      </p>
-      <div className="grid-3 mt-1" style={{ maxWidth: 1080, margin: '0.5rem auto 0' }}>
-        {LEVELS.map(({ key, label, tagline, Icon }) => (
-          <Link key={key} to="/register" className={`card level-card level-card-${key}`} style={{ color: 'inherit' }}>
-            <Icon className="level-card-icon" />
-            <h3>{label}</h3>
-            <p className="helper-text">{tagline}</p>
-          </Link>
-        ))}
-      </div>
 
       <div className="eyebrow mt-2" style={{ marginTop: '2rem' }}>The Four Sections</div>
       <div className="grid-4" style={{ textAlign: 'center', maxWidth: 1080, margin: '0.5rem auto 0' }}>
