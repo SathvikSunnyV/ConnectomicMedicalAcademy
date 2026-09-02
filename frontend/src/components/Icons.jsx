@@ -238,7 +238,8 @@ export const SECTION_ICON_MAP = {
   Anatomy: IconAnatomy,
   Physiology: IconPhysiology,
   Biochemistry: IconBiochemistry,
-  Neuroscience: IconNeuroscience
+  Neuroscience: IconNeuroscience,
+  FMGE: IconFmge
 };
 
 export const BOOK_ICON_MAP = {
@@ -255,6 +256,12 @@ export const LEVELS = [
   { key: 'reference', label: 'Reference & Postgraduate', tagline: 'Reference books, PPTs, videos and postgraduate-level material.', Icon: IconLibrary },
   { key: 'fmge', label: 'FMGE', tagline: 'Exam-focused high-yield notes, PPTs and question practice.', Icon: IconFmge }
 ];
+
+// Which subject cards show under each level. Bridge Course swaps
+// Neuroscience for an FMGE subsection; every other level keeps the classic
+// four preclinical subjects.
+export const BRIDGE_SUBSECTIONS = ['Anatomy', 'Physiology', 'Biochemistry', 'FMGE'];
+export const STANDARD_SUBSECTIONS = ['Anatomy', 'Physiology', 'Biochemistry', 'Neuroscience'];
 
 export function materialIconFor(type) {
   if (type === 'ppt') return IconPresentation;
