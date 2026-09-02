@@ -156,7 +156,7 @@ async function initSchema() {
         CREATE TABLE IF NOT EXISTS books (
             id            SERIAL PRIMARY KEY,
             section_id    INTEGER NOT NULL REFERENCES sections(id) ON DELETE CASCADE,
-            type          TEXT NOT NULL CHECK (type IN ('bridge','mbbs','reference')),
+            type          TEXT NOT NULL CHECK (type IN ('bridge','mbbs','reference','fmge')),
             title         TEXT NOT NULL,
             description   TEXT,
             position      INTEGER NOT NULL DEFAULT 0,
@@ -322,7 +322,7 @@ async function migrateContentSchema() {
         -- section (Bridge Course). Safe to re-run: drops and re-adds the
         -- same check every startup, no data is touched.
         ALTER TABLE books DROP CONSTRAINT IF EXISTS books_type_check;
-        ALTER TABLE books ADD CONSTRAINT books_type_check CHECK (type IN ('bridge','mbbs','reference'));
+        ALTER TABLE books ADD CONSTRAINT books_type_check CHECK (type IN ('bridge','mbbs','reference','fmge'));
 
         ALTER TABLE sections ADD COLUMN IF NOT EXISTS created_by INTEGER REFERENCES users(id) ON DELETE SET NULL;
         ALTER TABLE chapters ADD COLUMN IF NOT EXISTS created_by INTEGER REFERENCES users(id) ON DELETE SET NULL;
@@ -365,7 +365,8 @@ async function seedSections() {
         for (const [type, title, desc, position] of [
             ['bridge', 'Bridge Course', `Foundational bridge-course content to prepare incoming students for ${name}.`, 0],
             ['mbbs', 'MBBS Level', `Core chapter-wise ${name} teaching content for MBBS curriculum.`, 1],
-            ['reference', 'Reference & Postgraduate', `Reference book material, PPTs and videos for ${name}, including postgraduate-level resources.`, 2]
+            ['reference', 'Reference & Postgraduate', `Reference book material, PPTs and videos for ${name}, including postgraduate-level resources.`, 2],
+            ['fmge', 'FMGE', `FMGE exam-focused ${name} content -- high-yield notes, PPTs and question practice.`, 3]
         ]) {
             const { rows: [existing] } = await pool.query(
                 `SELECT id FROM books WHERE section_id=$1 AND type=$2 LIMIT 1`, [sectionId, type]
