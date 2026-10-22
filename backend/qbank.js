@@ -52,16 +52,7 @@ function init({ pool, authenticate, requireRole }) {
         return { test };
     }
 
-    function computeScore(answers, questions) {
-        let correct = 0, wrong = 0, skipped = 0;
-        for (const q of questions) {
-            const given = answers[q.id];
-            if (!given) skipped++;
-            else if (given === q.correct_answer) correct++;
-            else wrong++;
-        }
-        return { correct, wrong, skipped, total: questions.length, score: correct };
-    }
+    const { computeScore } = require('./scoring');
 
     // ============================================================
     // QUESTION BANK — faculty/admin CRUD + approval workflow
@@ -578,6 +569,34 @@ function init({ pool, authenticate, requireRole }) {
             res.json({ success: true });
         } catch (err) { console.error(err); res.status(500).json({ error: 'Server error while deleting the test.' }); }
     });
+
+    // ------------------------------------------------------------------
+    // Housekeeping: chapter/subject tests are regenerated fresh every time
+    // a student starts one (see /api/tests/chapter and /api/tests/subject
+    // above), and a test_attempts row is only created on submission -- so a
+    // student who generates a test and never finishes it leaves a
+    // generated_tests row (plus its generated_test_questions rows) behind
+    // forever. Left unchecked this grows without bound. Periodically purge
+    // chapter/subject tests past a retention window that were never
+    // attempted; generated_test_questions cascades on delete (FK
+    // ON DELETE CASCADE), so nothing extra to clean up there. Grand tests
+    // are faculty-curated and excluded -- they're meant to persist.
+    const TEST_CLEANUP_RETENTION_DAYS = parseInt(process.env.TEST_CLEANUP_RETENTION_DAYS, 10) || 7;
+    async function cleanupAbandonedPracticeTests() {
+        try {
+            const { rowCount } = await pool.query(
+                `DELETE FROM generated_tests
+                 WHERE test_type IN ('chapter', 'subject')
+                   AND created_at < NOW() - ($1 || ' days')::interval
+                   AND NOT EXISTS (SELECT 1 FROM test_attempts WHERE test_attempts.test_id = generated_tests.id)`,
+                [TEST_CLEANUP_RETENTION_DAYS]
+            );
+            if (rowCount > 0) console.log(`🧹  Cleaned up ${rowCount} abandoned practice test(s) older than ${TEST_CLEANUP_RETENTION_DAYS} day(s).`);
+        } catch (err) { console.error('Practice test cleanup failed:', err); }
+    }
+    // Run once shortly after startup, then daily.
+    setTimeout(cleanupAbandonedPracticeTests, 60 * 1000);
+    setInterval(cleanupAbandonedPracticeTests, 24 * 60 * 60 * 1000);
 
     return router;
 }

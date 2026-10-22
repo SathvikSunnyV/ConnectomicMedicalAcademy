@@ -1,22 +1,29 @@
 {
   "name": "connectomic-medical-academy-backend",
   "version": "1.0.0",
-  "description": "Connectomic Medical Academy \u2014 Anatomy / Physiology / Biochemistry / Neuroscience, MBBS-level + Reference tracks",
+  "description": "Connectomic Medical Academy — Anatomy / Physiology / Biochemistry / Neuroscience, MBBS-level + Reference tracks",
   "main": "server.js",
   "scripts": {
-    "prestart": "npm --prefix ../frontend install --include=dev --no-audit --no-fund && npm --prefix ../frontend run build",
-    "start": "node server.js"
+    "build": "node scripts/build-frontend.js --force",
+    "prestart": "node scripts/build-frontend.js",
+    "start": "node server.js",
+    "test": "node --test \"test/**/*.test.js\""
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.687.0",
     "@getbrevo/brevo": "^5.0.4",
     "bcryptjs": "^2.4.3",
+    "compression": "^1.8.2",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
+    "express-rate-limit": "^8.7.0",
+    "helmet": "^8.3.0",
     "jsonwebtoken": "^9.0.2",
+    "marked": "^18.0.13",
     "multer": "^2.2.0",
     "pg": "^8.11.5",
+    "sanitize-html": "^2.17.7",
     "twilio": "^5.3.0"
   }
 }

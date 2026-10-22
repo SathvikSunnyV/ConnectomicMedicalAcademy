@@ -15,9 +15,14 @@ export function AuthProvider({ children }) {
       const data = await api('/api/me');
       setCurrentUser({ ...data.user, profile: data.profile });
       setImpersonating(!!data.impersonating);
-    } catch {
-      localStorage.removeItem('cma_token');
-      setCurrentUser(null);
+    } catch (err) {
+      // Only an authentication failure (401) invalidates the token. A network
+      // blip or a 5xx must not silently log the user out -- keep the token
+      // and the current state so the next request can recover.
+      if (err.status === 401) {
+        localStorage.removeItem('cma_token');
+        setCurrentUser(null);
+      }
     } finally {
       setLoading(false);
     }

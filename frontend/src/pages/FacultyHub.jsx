@@ -224,15 +224,16 @@ export default function FacultyHub() {
   function AddNoteForm({ bookId, chapterId, onSaved }) {
     const [title, setTitle] = useState('');
     const [html, setHtml] = useState('');
+    const [format, setFormat] = useState('markdown'); // 'markdown' | 'html'
     const [busy, setBusy] = useState(false);
 
     async function handleSubmit(e) {
       e.preventDefault();
       if (!chapterId) { showToast('Notes need a specific chapter selected above.', 'error'); return; }
-      if (!title.trim() || !html.trim()) { showToast('Title and HTML content are required.', 'error'); return; }
+      if (!title.trim() || !html.trim()) { showToast(`Title and ${format === 'markdown' ? 'Markdown' : 'HTML'} content are required.`, 'error'); return; }
       setBusy(true);
       try {
-        await api('/api/faculty/notes', { method: 'POST', body: JSON.stringify({ chapterId, bookId, title, htmlContent: html }) });
+        await api('/api/faculty/notes', { method: 'POST', body: JSON.stringify({ chapterId, bookId, title, htmlContent: html, format }) });
         showToast('Note saved.');
         setTitle(''); setHtml('');
         onSaved();
@@ -243,15 +244,30 @@ export default function FacultyHub() {
 
     return (
       <div className="card">
-        <h3>Add a chapter note (HTML)</h3>
+        <h3>Add a chapter note</h3>
         <form onSubmit={handleSubmit}>
           <div className="field-group">
             <label className="field-label">Note title</label>
             <input className="field" value={title} onChange={e => setTitle(e.target.value)} />
           </div>
           <div className="field-group">
-            <label className="field-label">HTML content</label>
-            <textarea rows={8} value={html} onChange={e => setHtml(e.target.value)} placeholder="Paste the full HTML page for this note..." />
+            <label className="field-label">Format</label>
+            <div className="flex-between" style={{ gap: '0.4rem', justifyContent: 'flex-start' }}>
+              <button type="button" className={`btn btn-sm ${format === 'markdown' ? 'btn-primary' : 'btn-outline'}`} onClick={() => setFormat('markdown')}>Markdown</button>
+              <button type="button" className={`btn btn-sm ${format === 'html' ? 'btn-primary' : 'btn-outline'}`} onClick={() => setFormat('html')}>HTML</button>
+            </div>
+          </div>
+          <div className="field-group">
+            <label className="field-label">{format === 'markdown' ? 'Markdown content' : 'HTML content'}</label>
+            <textarea
+              rows={8}
+              value={html}
+              onChange={e => setHtml(e.target.value)}
+              placeholder={format === 'markdown'
+                ? 'Write your note using Markdown -- headings with #, lists with -, **bold**, tables, links, etc.'
+                : 'Paste the full HTML for this note...'}
+            />
+            {format === 'markdown' && <p className="helper-text">Markdown is converted to formatted HTML automatically when you save.</p>}
           </div>
           <button className="btn btn-primary" disabled={busy}>{busy ? 'Saving…' : 'Save note'}</button>
         </form>

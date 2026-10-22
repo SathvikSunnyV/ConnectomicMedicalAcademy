@@ -1,0 +1,13 @@
+{
+  "name": "Connectomic Medical Academy",
+  "short_name": "CMA",
+  "description": "MBBS exam-prep platform — chapter notes, lecture videos, practice tests and progress tracking.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#ffffff",
+  "icons": [
+    { "src": "/logo.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/logo.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}

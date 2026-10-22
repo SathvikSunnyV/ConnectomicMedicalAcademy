@@ -65,7 +65,7 @@ export default function VerifyOtp() {
       <div className="card" style={{ maxWidth: 420, margin: '2rem auto' }}>
         <h3>Verify your account</h3>
         <p className="helper-text">We sent a 6-digit code via {channel === 'sms' ? 'SMS' : 'email'}.</p>
-        {devOtp && (
+        {import.meta.env.DEV && devOtp && (
           <p className="helper-text icon-row" style={{ background: 'var(--accent-soft)', padding: '0.5rem 0.75rem', borderRadius: 8 }}>
             <IconInfo /> Dev mode (no {channel === 'sms' ? 'SMS provider' : 'SMTP'} configured) — your code is <strong>{devOtp}</strong>
           </p>

@@ -4,6 +4,9 @@ const path = require('path');
 const crypto = require('crypto');
 const express = require('express');
 const cors = require('cors');
+const helmet = require('helmet');
+const compression = require('compression');
+const rateLimit = require('express-rate-limit');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const multer = require('multer');
@@ -12,19 +15,142 @@ const { sendOtpEmail } = require('./mailer');
 const { sendOtpSms } = require('./sms');
 const storage = require('./storage');
 const qbank = require('./qbank');
+const { sanitizeNoteHtml, processNoteContent } = require('./sanitizeNote');
+const { normalizePhone, normalizeEmail } = require('./normalize');
+
+const IS_PRODUCTION = process.env.NODE_ENV === 'production';
+
+// Fail loudly rather than silently insecure: a production deploy running
+// with a guessable/default secret or a public default admin password is a
+// live vulnerability, not a warning. Development keeps the convenient
+// defaults so a fresh clone runs with zero config.
+if (IS_PRODUCTION) {
+    const problems = [];
+    if (!process.env.JWT_SECRET || process.env.JWT_SECRET === 'dev-secret-change-me') {
+        problems.push('JWT_SECRET is not set (or is still the placeholder). Set it to a long random value.');
+    }
+    if (!process.env.DEFAULT_ADMIN_PASSWORD || process.env.DEFAULT_ADMIN_PASSWORD === 'ChangeMe123!') {
+        problems.push('DEFAULT_ADMIN_PASSWORD is not set (or is still the placeholder). Set it before the first boot that seeds the admin account.');
+    }
+    if (problems.length) {
+        console.error('❌  Refusing to start in production with insecure defaults:');
+        problems.forEach(p => console.error('   - ' + p));
+        process.exit(1);
+    }
+    // This one can't be verified programmatically (the app has no way to
+    // know what's in front of it), so it's a loud warning rather than a
+    // hard exit -- the app itself never terminates TLS, so if nothing sits
+    // in front of it doing that, traffic (including login credentials and
+    // JWTs) is unencrypted.
+    if (!process.env.BEHIND_REVERSE_PROXY) {
+        console.warn('⚠️   BEHIND_REVERSE_PROXY is not set. In production this app expects to sit behind a reverse proxy (nginx, Caddy, a platform load balancer, etc.) that terminates HTTPS. If that is already the case, set BEHIND_REVERSE_PROXY=true to silence this warning. If it is not, traffic to this server is unencrypted.');
+    }
+}
 
 const app = express();
-app.use(cors());
+app.set('trust proxy', 1); // so express-rate-limit keys on the real client IP behind a reverse proxy
+app.use(helmet({
+    contentSecurityPolicy: {
+        directives: {
+            ...helmet.contentSecurityPolicy.getDefaultDirectives(),
+            // Defence in depth alongside the note-iframe sandbox/sanitisation
+            // (see sanitizeNote.js, NoteModal.jsx): no inline scripts even if
+            // a payload somehow reached the DOM.
+            'script-src': ["'self'"],
+            'frame-src': ["'self'", 'data:'],
+            'img-src': ["'self'", 'data:', 'https:'],
+            'media-src': ["'self'", 'https:'],
+        },
+    },
+}));
+app.use(compression());
+
+// Same-origin deployment (the Vite proxy in dev, express.static in prod)
+// doesn't need CORS at all. Only enable it, and only for an explicit
+// allow-list, when CORS_ORIGIN is actually configured -- e.g. a separately
+// hosted frontend. Never wildcard-allow in production.
+const corsOrigin = process.env.CORS_ORIGIN;
+if (corsOrigin) {
+    app.use(cors({ origin: corsOrigin.split(',').map(o => o.trim()), credentials: true }));
+} else if (!IS_PRODUCTION) {
+    app.use(cors());
+}
+
 app.use(express.json({ limit: '5mb' }));
+
+// A request ID on every request lets a failed submission reported by a
+// student/faculty member be correlated with the exact server-side log line
+// and stack trace, instead of guessing from a timestamp. Echoed back as a
+// response header so it can be surfaced in a bug report if needed.
+app.use((req, res, next) => {
+    req.requestId = crypto.randomUUID();
+    res.setHeader('X-Request-Id', req.requestId);
+    const start = Date.now();
+    res.on('finish', () => {
+        console.log(`[${req.requestId}] ${req.method} ${req.originalUrl} -> ${res.statusCode} (${Date.now() - start}ms)`);
+    });
+    next();
+});
+
 app.use(express.static(path.join(__dirname, '..', 'frontend', 'dist')));
+
+// Brute-force / enumeration / OTP-credit-burning protection on the auth
+// surface. Conservative starting points per the security review; tune if
+// legitimate users are affected.
+const loginLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000, max: 10,
+    standardHeaders: true, legacyHeaders: false,
+    message: { error: 'Too many attempts. Please wait a few minutes and try again.' }
+});
+// Guards the endpoint that verifies the reset OTP. The per-user attempt cap
+// already limits guesses per code; this adds a per-IP ceiling on top.
+const resetLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000, max: 10,
+    standardHeaders: true, legacyHeaders: false,
+    message: { error: 'Too many attempts. Please wait a few minutes and try again.' }
+});
+const otpLimiter = rateLimit({
+    windowMs: 60 * 60 * 1000, max: 3,
+    standardHeaders: true, legacyHeaders: false,
+    message: { error: 'Too many requests. Please wait a while and try again.' }
+});
 
 // Multer parses multipart/form-data only -- for a plain JSON request it
 // just calls next() without touching req.body, so these routes can accept
 // EITHER a JSON body (link-based material) OR a multipart upload (file),
 // same endpoint either way. Memory storage since files are streamed
 // straight through to R2, never written to local disk.
-const uploadDoc = multer({ storage: multer.memoryStorage(), limits: { fileSize: 100 * 1024 * 1024 } }); // 100MB — PPT/PDF
-const uploadVideo = multer({ storage: multer.memoryStorage(), limits: { fileSize: 1024 * 1024 * 1024 } }); // 1GB — lecture video
+//
+// fileFilter whitelists MIME types on the server -- client-side validation
+// is a UX nicety only, never a control. Anything else (HTML, SVG-with-
+// script, raw scripts, etc.) is rejected before it ever reaches R2.
+const ALLOWED_DOC_MIME_TYPES = new Set([
+    'application/pdf',
+    'application/vnd.ms-powerpoint',
+    'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+    'application/msword',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'image/png', 'image/jpeg', 'image/webp', 'image/gif',
+]);
+const ALLOWED_VIDEO_MIME_TYPES = new Set(['video/mp4', 'video/webm']);
+
+function mimeFileFilter(allowedSet) {
+    return (req, file, cb) => {
+        if (allowedSet.has(file.mimetype)) return cb(null, true);
+        cb(new Error(`Unsupported file type: ${file.mimetype}`));
+    };
+}
+
+const uploadDoc = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 100 * 1024 * 1024 }, // 100MB — PPT/PDF
+    fileFilter: mimeFileFilter(ALLOWED_DOC_MIME_TYPES),
+});
+const uploadVideo = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 1024 * 1024 * 1024 }, // 1GB — lecture video
+    fileFilter: mimeFileFilter(ALLOWED_VIDEO_MIME_TYPES),
+});
 
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-me';
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '30d';
@@ -57,19 +183,14 @@ function signToken(user) {
 function generateOtp() {
     return String(crypto.randomInt(100000, 999999));
 }
-function normalizePhone(phone) {
-    if (!phone) return null;
-    let cleaned = phone.trim().replace(/[\s\-().]/g, '');
-    if (!cleaned) return null;
-    if (cleaned.startsWith('+')) return cleaned; // already E.164, e.g. +919876543210
-    cleaned = cleaned.replace(/^0+/, ''); // drop a leading trunk 0 (local dialing format)
-    if (/^\d{10}$/.test(cleaned)) return `+91${cleaned}`; // bare 10-digit -> assume Indian mobile
-    if (/^\d{11,15}$/.test(cleaned)) return `+${cleaned}`; // country code already present, just missing '+'
-    return cleaned; // unrecognized shape -- let Twilio's own validation surface a clear error
+// Only ever include the raw OTP in an API response outside production. In
+// production, if the SMS/email provider is down or unconfigured, the OTP
+// must never reach the client -- it stays in the console/log only.
+function devOtpField(otp) {
+    return process.env.NODE_ENV === 'production' ? {} : { devOtp: otp };
 }
-function normalizeEmail(email) {
-    return email ? email.toLowerCase().trim() : null;
-}
+
+
 async function deliverOtp(user, otp) {
     // Phone wins if both are on the account -- that's the channel this app
     // is built around; email is the fallback for phone-less accounts.
@@ -85,7 +206,7 @@ async function deliverOtp(user, otp) {
 // AUTH: register (email or phone, at least one) -> verify OTP -> login
 // forgot/reset password via OTP, using either identifier
 // ---------------------------------------------------------------------------
-app.post('/api/register', async (req, res) => {
+app.post('/api/register', loginLimiter, async (req, res) => {
     const { password, name, role } = req.body;
     const email = normalizeEmail(req.body.email);
     const phone = normalizePhone(req.body.phone);
@@ -125,7 +246,7 @@ app.post('/api/register', async (req, res) => {
         res.status(201).json({
             message: `Verification code sent via ${channel === 'sms' ? 'SMS' : 'email'}.`,
             userId: user.id, channel,
-            ...(delivered ? {} : { devOtp: otp }) // only present when no real provider is configured
+            ...(delivered ? {} : devOtpField(otp)) // only present outside production when no real provider is configured
         });
     } catch (err) {
         console.error(err);
@@ -133,7 +254,7 @@ app.post('/api/register', async (req, res) => {
     }
 });
 
-app.post('/api/verify-otp', async (req, res) => {
+app.post('/api/verify-otp', loginLimiter, async (req, res) => {
     const { userId, otp } = req.body;
     if (!userId || !otp) return res.status(400).json({ error: 'Missing verification details.' });
     try {
@@ -171,7 +292,7 @@ app.post('/api/verify-otp', async (req, res) => {
     }
 });
 
-app.post('/api/resend-otp', async (req, res) => {
+app.post('/api/resend-otp', otpLimiter, async (req, res) => {
     const { userId } = req.body;
     try {
         const { rows: [user] } = await pool.query(`SELECT * FROM users WHERE id=$1`, [userId]);
@@ -186,14 +307,14 @@ app.post('/api/resend-otp', async (req, res) => {
             [otpHash, otpChannel, expiresAt, userId]
         );
         const { channel, delivered } = await deliverOtp({ ...user, otp_purpose: 'verify' }, otp);
-        res.json({ message: `Code resent via ${channel === 'sms' ? 'SMS' : 'email'}.`, ...(delivered ? {} : { devOtp: otp }) });
+        res.json({ message: `Code resent via ${channel === 'sms' ? 'SMS' : 'email'}.`, ...(delivered ? {} : devOtpField(otp)) });
     } catch (err) {
         console.error(err);
         res.status(500).json({ error: 'Server error while resending the code.' });
     }
 });
 
-app.post('/api/login', async (req, res) => {
+app.post('/api/login', loginLimiter, async (req, res) => {
     const { identifier, password } = req.body;
     if (!identifier || !password) return res.status(400).json({ error: 'Enter your email/phone and password.' });
     const cleaned = identifier.trim();
@@ -222,7 +343,7 @@ app.post('/api/login', async (req, res) => {
     }
 });
 
-app.post('/api/forgot-password', async (req, res) => {
+app.post('/api/forgot-password', otpLimiter, async (req, res) => {
     const identifier = (req.body.identifier || '').trim();
     if (!identifier) return res.json({ message: 'If that account exists, a reset code has been sent.' });
     try {
@@ -241,14 +362,14 @@ app.post('/api/forgot-password', async (req, res) => {
             [otpHash, otpChannel, expiresAt, user.id]
         );
         const { delivered } = await deliverOtp({ ...user, otp_purpose: 'reset' }, otp);
-        res.json({ message: 'If that account exists, a reset code has been sent.', userId: user.id, ...(delivered ? {} : { devOtp: otp }) });
+        res.json({ message: 'If that account exists, a reset code has been sent.', userId: user.id, ...(delivered ? {} : devOtpField(otp)) });
     } catch (err) {
         console.error(err);
         res.status(500).json({ error: 'Server error while requesting a reset code.' });
     }
 });
 
-app.post('/api/reset-password', async (req, res) => {
+app.post('/api/reset-password', resetLimiter, async (req, res) => {
     const { userId, otp, newPassword } = req.body;
     if (!userId || !otp || !newPassword) return res.status(400).json({ error: 'Missing reset details.' });
     if (newPassword.length < 6) return res.status(400).json({ error: 'Password must be at least 6 characters.' });
@@ -506,9 +627,9 @@ app.get('/api/faculty/notes/mine', authenticate, requireRole('faculty'), async (
 });
 
 app.post('/api/faculty/notes', authenticate, requireRole('faculty'), async (req, res) => {
-    const { chapterId, bookId, title, htmlContent } = req.body;
+    const { chapterId, bookId, title, htmlContent, format } = req.body;
     if (!chapterId || !bookId || !title?.trim() || !htmlContent?.trim())
-        return res.status(400).json({ error: 'Chapter, book, title and HTML content are required.' });
+        return res.status(400).json({ error: 'Chapter, book, title and content are required.' });
     try {
         const { rows: [maxPos] } = await pool.query(
             `SELECT COALESCE(MAX(position), -1) AS max_pos FROM chapter_notes WHERE chapter_id=$1 AND book_id=$2`, [chapterId, bookId]
@@ -516,18 +637,18 @@ app.post('/api/faculty/notes', authenticate, requireRole('faculty'), async (req,
         const { rows: [note] } = await pool.query(
             `INSERT INTO chapter_notes (chapter_id, book_id, title, html_content, position, created_by)
              VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
-            [chapterId, bookId, title.trim(), htmlContent, parseInt(maxPos.max_pos, 10) + 1, req.user.id]
+            [chapterId, bookId, title.trim(), processNoteContent(htmlContent, format), parseInt(maxPos.max_pos, 10) + 1, req.user.id]
         );
         res.status(201).json({ success: true, note });
     } catch (err) { console.error(err); res.status(500).json({ error: 'Server error while saving the note.' }); }
 });
 
 app.put('/api/faculty/notes/:id', authenticate, requireRole('faculty'), async (req, res) => {
-    const { title, htmlContent } = req.body;
+    const { title, htmlContent, format } = req.body;
     try {
         const { rows: [note] } = await pool.query(
             `UPDATE chapter_notes SET title=$1, html_content=$2, updated_at=NOW() WHERE id=$3 AND created_by=$4 RETURNING *`,
-            [title, htmlContent, req.params.id, req.user.id]
+            [title, processNoteContent(htmlContent, format), req.params.id, req.user.id]
         );
         if (!note) return res.status(404).json({ error: 'Note not found.' });
         res.json({ success: true, note });
@@ -866,7 +987,18 @@ app.delete('/api/blogs/:id', authenticate, async (req, res) => {
     } catch (err) { console.error(err); res.status(500).json({ error: 'Server error while deleting the post.' }); }
 });
 
-app.get('/api/health', (req, res) => res.json({ ok: true, name: 'Connectomic Medical Academy' }));
+// Actually checks the database rather than just returning a static { ok:
+// true } -- a health check that can't detect a dead DB connection isn't
+// useful to a load balancer or uptime monitor.
+app.get('/api/health', async (req, res) => {
+    try {
+        await pool.query('SELECT 1');
+        res.json({ ok: true, name: 'Connectomic Medical Academy', db: 'up' });
+    } catch (err) {
+        console.error('Health check DB query failed:', err);
+        res.status(503).json({ ok: false, name: 'Connectomic Medical Academy', db: 'down' });
+    }
+});
 
 // SPA fallback: any non-API GET (e.g. a direct load or refresh on /tests,
 // /progress, /sections/3, etc.) serves the built index.html so React
@@ -875,7 +1007,34 @@ app.get(/^\/(?!api).*/, (req, res) => {
     res.sendFile(path.join(__dirname, '..', 'frontend', 'dist', 'index.html'));
 });
 
+// Multer errors (oversized file, or a file type rejected by fileFilter --
+// see uploadDoc/uploadVideo above) otherwise fall through to Express's
+// default HTML error page, which breaks every frontend caller expecting
+// JSON. Catch them here and respond consistently with the rest of the API.
+app.use((err, req, res, next) => {
+    if (err instanceof multer.MulterError || (err && /Unsupported file type/.test(err.message))) {
+        return res.status(400).json({ error: err.message });
+    }
+    next(err);
+});
+
 const PORT = process.env.PORT || 4100;
+let server;
 initSchema()
-    .then(() => app.listen(PORT, () => console.log(`🚀  Connectomic Medical Academy running on http://localhost:${PORT}`)))
+    .then(() => { server = app.listen(PORT, () => console.log(`🚀  Connectomic Medical Academy running on http://localhost:${PORT}`)); })
     .catch(err => { console.error('Failed to initialise database:', err); process.exit(1); });
+
+// Graceful shutdown: stop accepting new connections, let in-flight requests
+// finish, then close the DB pool before exiting -- avoids dropped requests
+// and unclosed connections on deploy/restart.
+function shutdown(signal) {
+    console.log(`${signal} received, shutting down gracefully...`);
+    if (!server) return pool.end().then(() => process.exit(0));
+    server.close(() => {
+        pool.end().then(() => process.exit(0)).catch(() => process.exit(1));
+    });
+    // Force-exit if close hangs (e.g. a long-lived connection never ends).
+    setTimeout(() => process.exit(1), 10000).unref();
+}
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));

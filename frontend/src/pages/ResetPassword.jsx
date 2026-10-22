@@ -45,7 +45,7 @@ export default function ResetPassword() {
       <div className="card" style={{ maxWidth: 420, margin: '2rem auto' }}>
         <h3>Reset password</h3>
         <p className="helper-text">Enter the code we sent you.</p>
-        {devOtp && (
+        {import.meta.env.DEV && devOtp && (
           <p className="helper-text icon-row" style={{ background: 'var(--accent-soft)', padding: '0.5rem 0.75rem', borderRadius: 8 }}>
             <IconInfo /> Dev mode — your code is <strong>{devOtp}</strong>
           </p>

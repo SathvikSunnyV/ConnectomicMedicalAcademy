@@ -356,12 +356,18 @@ async function seedSections() {
     const sectionNames = Object.keys(SECTION_CHAPTERS);
     for (let i = 0; i < sectionNames.length; i++) {
         const name = sectionNames[i];
-        const { rows: [section] } = await pool.query(
+        // DO NOTHING on conflict -- a faculty-reordered position must survive
+        // a server restart. ON CONFLICT ... DO UPDATE SET position=EXCLUDED
+        // would silently reset it back to the seed order every time. When the
+        // row already exists, ON CONFLICT DO NOTHING RETURNING returns no
+        // row, so fall back to a plain SELECT for its id.
+        const { rows: [inserted] } = await pool.query(
             `INSERT INTO sections (name, position) VALUES ($1, $2)
-             ON CONFLICT (name) DO UPDATE SET position = EXCLUDED.position
+             ON CONFLICT (name) DO NOTHING
              RETURNING id`,
             [name, i]
         );
+        const section = inserted || (await pool.query(`SELECT id FROM sections WHERE name=$1`, [name])).rows[0];
         const sectionId = section.id;
 
         // Seed the two starter books only if this section has none of that
@@ -389,9 +395,11 @@ async function seedSections() {
 
         const chapters = SECTION_CHAPTERS[name];
         for (let c = 0; c < chapters.length; c++) {
+            // Same reasoning as sections above -- don't clobber a faculty
+            // reorder on restart.
             await pool.query(
                 `INSERT INTO chapters (section_id, name, position) VALUES ($1, $2, $3)
-                 ON CONFLICT (section_id, name) DO UPDATE SET position = EXCLUDED.position`,
+                 ON CONFLICT (section_id, name) DO NOTHING`,
                 [sectionId, chapters[c], c]
             );
         }

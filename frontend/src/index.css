@@ -215,3 +215,34 @@ footer { text-align: center; padding: 2rem 1rem; color: var(--ink-soft); font-si
 }
 .fixed-credit:hover { opacity: 1; }
 .fixed-credit a { color: inherit; text-decoration: none; }
+
+/* Visually hides content while keeping it available to screen readers --
+   for icon-only buttons (close buttons, play icons on the Seven Hills
+   badges, etc.) that have no visible text label. */
+.sr-only {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
+}
+
+/* Respect the OS-level "reduce motion" preference: disable the decorative
+   hover lifts/scales and the loading spinner's spin for anyone who has
+   asked their system to minimise animation. */
+@media (prefers-reduced-motion: reduce) {
+  .btn:hover,
+  .nav-brand:hover .nav-logo-img,
+  .badge-hill:hover,
+  .section-card:hover,
+  .level-card:hover {
+    transform: none;
+  }
+  .spinner {
+    animation: none;
+    border-top-color: var(--border);
+  }
+  * {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
