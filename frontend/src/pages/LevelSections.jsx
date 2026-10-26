@@ -9,7 +9,14 @@ export default function LevelSections() {
   const navigate = useNavigate();
   const levelInfo = LEVELS.find(l => l.key === level);
   const levelLabel = location.state?.levelLabel || levelInfo?.label || level;
-  const allowedSubjects = level === 'bridge' ? BRIDGE_SUBSECTIONS : STANDARD_SUBSECTIONS;
+  // Bridge swaps Neuroscience for FMGE. The FMGE level keeps the four classic
+  // subjects AND the FMGE subject, so content faculty file under
+  // Section = FMGE / Book = FMGE is reachable by students.
+  const allowedSubjects = level === 'bridge'
+    ? BRIDGE_SUBSECTIONS
+    : level === 'fmge'
+      ? [...STANDARD_SUBSECTIONS, 'FMGE']
+      : STANDARD_SUBSECTIONS;
 
   const [sections, setSections] = useState(null);
   const [error, setError] = useState('');
